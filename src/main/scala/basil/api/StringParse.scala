@@ -30,7 +30,7 @@ trait StringParse {
           .map(s => s.copy(value = JString(s.value)))
     )
 
-  private def parseStringRHelper(raw: String,
+  private def parseStringRHelper(raw: Array[Char],
                                  from: Int,
                                  to: Int,
                                  acc: Either[ParseError, Parsed[String]])
@@ -40,12 +40,12 @@ trait StringParse {
         if (raw.length <= to) {
           Left(ParseError("Malformed JSON, parsing String, reach EOF"))
         } else {
-          val nextChar = raw.charAt(to)
+          val nextChar = raw(to)
 
           nextChar match {
             case '\\' =>
               val escaped =
-                readEscapedChar(raw.charAt(to + 1)).map { c =>
+                readEscapedChar(raw(to + 1)).map { c =>
                   val Parsed(acTo, accStr) = ac
                   ac.copy(endedAt = acTo + 2, value = accStr + c)
                 }

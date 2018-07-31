@@ -6,6 +6,7 @@ scalaVersion := "2.12.6"
 
 libraryDependencies ++= Seq(
   "com.slamdata" %% "matryoshka-core" % "0.18.3",
+  "com.github.mpilquist" %% "simulacrum" % "0.13.0",
   "org.spire-math" %% "jawn-parser" % "0.12.1",
   "org.json4s" %% "json4s-native" % "3.5.4",
   "org.scalatest" %% "scalatest" % "3.0.1" % "test",
@@ -15,3 +16,6 @@ libraryDependencies ++= Seq(
 scalacOptions += "-Ypartial-unification"
 resolvers += Resolver.sonatypeRepo("releases")
 addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7")
+
+addCompilerPlugin(
+  "org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)

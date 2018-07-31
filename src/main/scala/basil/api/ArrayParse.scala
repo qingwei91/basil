@@ -2,7 +2,8 @@ package basil.api
 
 import org.json4s.JValue
 import scalaz.{Bind, Kleisli}
-import scalaz.syntax.arrow._
+
+import scala.annotation.tailrec
 
 class ArrayParse(stringParser: StringParse) {
   import stringParser._
@@ -28,22 +29,12 @@ class ArrayParse(stringParser: StringParse) {
 
   private def parseAnElement: ParseAction[Parsed[JValue]] = parseString
 
-  private val whiteSpaceChars = List(' ', '\n')
-  object whitespaces {
-    def unapply(arg: Char): Option[Char] = {
-      whiteSpaceChars.find(_ == arg)
-    }
-  }
-
   private def parseUntilFirst(
       state: ParsingState,
       openBracketSeen: Boolean = false): Either[ParseError, ParsingState] = {
-    val ParsingState(raw, idx, _) = state
 
-    val charI = raw.charAt(idx)
-
-    charI match {
-      case whitespaces(ws) =>
+    state.pointedChar match {
+      case whitespaces(_) =>
         parseUntilFirst(state.idxIncrement(1), openBracketSeen)
       case '[' if !openBracketSeen =>
         parseUntilFirst(state.idxIncrement(1), openBracketSeen = true)
@@ -56,23 +47,27 @@ class ArrayParse(stringParser: StringParse) {
   }
 
   private def parseUntilNext(
-      state: ParsingState): Either[ParseError, ParsingState] = {
-    val ParsingState(raw, idx, ctx) = state
+      state: ParsingState,
+      arrParseState: ArrayParseState): Either[ParseError, ParsingState] = {
 
-    val charI = raw.charAt(idx)
-    (charI, ctx) match {
-      case (whitespaces(_), ArrayMid(_)) =>
-        parseUntilNext(state.idxIncrement(1))
-      case (',', ArrayMid(true)) =>
+    (state.pointedChar, arrParseState) match {
+      case (whitespaces(_), _) =>
+        parseUntilNext(state.idxIncrement(1), arrParseState)
+
+      case (',', ArrayMidAfterComma) =>
         Left(ParseError(s"Syntax error, multiple comma: $state"))
-      case (',', ArrayMid(false)) =>
-        parseUntilNext(state.idxIncrement(1).withCtx(ArrayMid(true)))
-      case (_, ArrayMid(true)) => Right(state)
+
+      case (',', ArrayMidBeforeComma) =>
+        parseUntilNext(state.idxIncrement(1), ArrayMidAfterComma)
+
+      case (_, ArrayMidAfterComma) => Right(state)
+
       case other =>
         Left(ParseError(s"Expect comma, got $other"))
     }
   }
 
+  @tailrec
   private def parseUntilNth(
       state: ParsingState,
       currentElement: Int,
@@ -80,20 +75,24 @@ class ArrayParse(stringParser: StringParse) {
 
     val newStateE = currentElement match {
       case 0 => parseUntilFirst(state)
-      case n => parseUntilNext(state)
+      case n => parseUntilNext(state, ArrayMidBeforeComma)
     }
 
-    newStateE.flatMap { newState =>
-      if (currentElement == targetElement) {
-        Right(newState)
-      } else {
-        parseAnElement(newState).flatMap { parsed =>
-          val nextState =
-            newState.copy(idx = parsed.endedAt + 1).withCtx(ArrayMid(false))
+    newStateE match {
+      case Right(newState) =>
+        if (currentElement == targetElement) {
+          Right(newState)
+        } else {
+          parseAnElement(newState) match {
+            case Right(parsed) =>
+              val nextState = newState.copy(idx = parsed.endedAt + 1)
 
-          parseUntilNth(nextState, currentElement + 1, targetElement)
+              parseUntilNth(nextState, currentElement + 1, targetElement)
+
+            case Left(left) => Left(left)
+          }
         }
-      }
+      case left => left
     }
   }
 
@@ -102,3 +101,7 @@ class ArrayParse(stringParser: StringParse) {
     Kleisli[Either[ParseError, ?], ParsingState, ParsingState](st =>
       parseUntilNth(st, 0, n))
 }
+
+sealed trait ArrayParseState
+case object ArrayMidBeforeComma extends ArrayParseState
+case object ArrayMidAfterComma extends ArrayParseState
