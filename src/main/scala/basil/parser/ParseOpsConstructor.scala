@@ -10,6 +10,8 @@ trait ParseOpsConstructor {
   def getN(n: Int, tree: OpsTree): OpsTree = {
     Fix(GetN(n, tree))
   }
+
+  def getNum = Fix[ParseOps](GetNum)
 }
 
 object ParseOpsConstructor extends ParseOpsConstructor

@@ -18,12 +18,13 @@ object Parser {
   val parsing: Algebra[ParseOps, ParseAction[Parsed[JValue]]] = {
     case GetString     => parseString
     case GetN(n, next) => parseArray(n).andThen(next)
-    case GetNum => parseNum
+    case GetNum        => parseNum
   }
 
   def parse(parseTree: OpsTree): ParseAction[Parsed[JValue]] = {
     parseTree.cata(parsing)
   }
+
 }
 
 sealed trait ParsingCtx

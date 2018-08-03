@@ -15,6 +15,7 @@ package object api {
 
     def charAt(i: Int): Char = raw(i)
     def pointedChar: Char = raw(idx)
+    def isLast: Boolean = raw.length == idx + 1
   }
 
   case class Parsed[A](endedAt: Int, value: A)

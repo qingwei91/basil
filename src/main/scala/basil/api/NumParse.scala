@@ -5,10 +5,14 @@ import org.json4s.JsonAST.JDouble
 import scalaz.Kleisli
 
 object NumParse {
-  private val numChars = (0 to 9).map(_.toChar).toList
+  private val numChars: List[Char] = List(
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
+  )
 
   private object num {
-    def unapply(arg: Char): Option[Char] = numChars.find(_ == arg)
+    def unapply(arg: Char): Option[Char] = {
+      numChars.find(_ == arg)
+    }
   }
   private object exponent {
     def unapply(arg: Char): Option[Char] =
@@ -55,6 +59,7 @@ object NumParse {
       state: ParsingState,
       numParseState: NumParseState): Either[ParseError, ParsingState] = {
     (state.ctx, state.pointedChar, numParseState) match {
+      case (RootC, num(_), _) if state.isLast => Right(state)
       case (_, num(_), _) =>
         parseAfterSign(state.idxIncrement(1), numParseState)
 
@@ -94,8 +99,8 @@ object NumParse {
         parseNumRecurse(state)
           .map {
             case (from, to) =>
-              Parsed(to - 1,
-                     JDouble(state.raw.slice(from, to).mkString.toDouble))
+              Parsed(to,
+                     JDouble(state.raw.slice(from, to + 1).mkString.toDouble))
         }
     )
 }
