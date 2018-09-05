@@ -9,8 +9,7 @@ class ArrayParse(stringParser: StringParse) {
   import stringParser._
 
   implicit val eitherBind: Bind[ParseResult] = new Bind[ParseResult] {
-    override def bind[A, B](fa: ParseResult[A])(
-        f: A => ParseResult[B]): ParseResult[B] = {
+    override def bind[A, B](fa: ParseResult[A])(f: A => ParseResult[B]): ParseResult[B] = {
       fa.flatMap(f)
     }
 
@@ -27,7 +26,21 @@ class ArrayParse(stringParser: StringParse) {
     }
   }
 
-  private def parseAnElement: ParseAction[Parsed[JValue]] = parseString
+  private def parseAnElement: ParseAction[Parsed[JValue]] = ???
+
+  private def skipArray: ParseAction[Parsed[JValue]] = Kleisli { state =>
+    parseUntilFirst(state).flatMap(parseUntilEnd).map(s => Parsed(s.idx, ???))
+    ???
+  }
+
+  private def parseUntilEnd(state: ParsingState): Either[ParseError, ParsingState] = {
+    parseUntilNext(state, ArrayMidBeforeComma).flatMap { st =>
+      st.pointedChar match {
+        case ']' => Right(st.idxIncrement(1))
+        case _   => parseUntilEnd(state)
+      }
+    }
+  }
 
   private def parseUntilFirst(
       state: ParsingState,
@@ -46,9 +59,8 @@ class ArrayParse(stringParser: StringParse) {
     }
   }
 
-  private def parseUntilNext(
-      state: ParsingState,
-      arrParseState: ArrayParseState): Either[ParseError, ParsingState] = {
+  private def parseUntilNext(state: ParsingState,
+                             arrParseState: ArrayParseState): Either[ParseError, ParsingState] = {
 
     (state.pointedChar, arrParseState) match {
       case (whitespaces(_), _) =>
@@ -68,10 +80,9 @@ class ArrayParse(stringParser: StringParse) {
   }
 
   @tailrec
-  private def parseUntilNth(
-      state: ParsingState,
-      currentElement: Int,
-      targetElement: Int): Either[ParseError, ParsingState] = {
+  private def parseUntilNth(state: ParsingState,
+                            currentElement: Int,
+                            targetElement: Int): Either[ParseError, ParsingState] = {
 
     val newStateE = currentElement match {
       case 0 => parseUntilFirst(state)
@@ -96,12 +107,10 @@ class ArrayParse(stringParser: StringParse) {
     }
   }
 
-  def parseArray(
-      n: Int): Kleisli[Either[ParseError, ?], ParsingState, ParsingState] =
-    Kleisli[Either[ParseError, ?], ParsingState, ParsingState](st =>
-      parseUntilNth(st, 0, n))
+  def parseArray(n: Int): Kleisli[Either[ParseError, ?], ParsingState, ParsingState] =
+    Kleisli[Either[ParseError, ?], ParsingState, ParsingState](st => parseUntilNth(st, 0, n))
 }
 
 sealed trait ArrayParseState
 case object ArrayMidBeforeComma extends ArrayParseState
-case object ArrayMidAfterComma extends ArrayParseState
+case object ArrayMidAfterComma  extends ArrayParseState

@@ -1,16 +1,13 @@
 package basil.parser
 
-import basil.MyFix
-import basil.api.OpsTree
-import matryoshka.data.Fix
 import scalaz._
 import scalaz.syntax.applicative._
 
 sealed trait ParseOps[+A]
 
-case object GetString extends ParseOps[Nothing]
-case object GetNum extends ParseOps[Nothing]
-case object GetBool extends ParseOps[Nothing]
+case object GetString             extends ParseOps[Nothing]
+case object GetNum                extends ParseOps[Nothing]
+case object GetBool               extends ParseOps[Nothing]
 case class GetNullable[A](ops: A) extends ParseOps[A]
 
 case class GetN[A](n: Int, next: A) extends ParseOps[A]

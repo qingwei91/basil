@@ -1,9 +1,8 @@
 package basil
 
-import basil.parser.{ParseOps, ResultType}
+import basil.parser.ParseOps
 import matryoshka.data.Fix
-import matryoshka.{EqualT, RecursiveT, ShowT}
-import scalaz.{Functor, Kleisli}
+import scalaz.Kleisli
 
 package object api {
   type OpsTree = Fix[ParseOps]
@@ -29,19 +28,4 @@ package object api {
       whiteSpaceChars.find(_ == arg)
     }
   }
-}
-
-case class MyFix[F[_]](unFix: F[MyFix[F]])(
-    implicit val rTpe: ResultType[F[MyFix[F]]]) {
-  type R = rTpe.R
-}
-
-object MyFix {
-  implicit def birecursiveT: RecursiveT[MyFix] = new RecursiveT[MyFix] {
-    def projectT[F[_]: Functor](t: MyFix[F]): F[MyFix[F]] = t.unFix
-  }
-
-  implicit val equalT: EqualT[Fix] = EqualT.recursiveT
-
-  implicit val showT: ShowT[Fix] = ShowT.recursiveT
 }

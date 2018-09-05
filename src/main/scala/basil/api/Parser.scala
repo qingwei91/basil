@@ -3,7 +3,7 @@ package basil.api
 import basil.parser._
 import matryoshka.data.Fix
 import matryoshka.implicits._
-import matryoshka.Algebra
+import matryoshka.{Algebra, Recursive}
 import scalaz._
 import Arrow._
 import org.json4s._
@@ -14,6 +14,8 @@ object Parser {
   import NumParse._
   val arrayParse = new ArrayParse(StringParse)
   import arrayParse._
+
+  type ParseAlgebra[X] = Algebra[ParseOps, X]
 
   val parsing: Algebra[ParseOps, ParseAction[Parsed[JValue]]] = {
     case GetString     => parseString
@@ -28,8 +30,8 @@ object Parser {
 }
 
 sealed trait ParsingCtx
-case object RootC extends ParsingCtx
+case object RootC  extends ParsingCtx
 case object ArrayC extends ParsingCtx
-case object ObjC extends ParsingCtx
+case object ObjC   extends ParsingCtx
 
 case class ParseError(msg: String)
