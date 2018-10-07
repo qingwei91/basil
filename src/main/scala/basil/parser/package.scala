@@ -25,8 +25,9 @@ package object parser {
       .flatMap {
         case Some(('"', nextStream)) =>
           nextStream.pull.takeThrough(_ != '"')
-        case Some((other, _)) => Pull.raiseError[IO](PError('\"', Some(other)))
-        case None             => Pull.raiseError[IO](PError('\"', None))
+        case Some((other, _)) =>
+          Pull.raiseError[IO](PError('\"', Some(other)))
+        case None => Pull.raiseError[IO](PError('\"', None))
       }
       .stream
       .compile
@@ -102,11 +103,11 @@ package object parser {
     }.stream
   }
 
-  private def takeTilEnd(s: Stream[IO, Char]): Stream[IO, Char] = {
+  private def takeTilArrayEnd(s: Stream[IO, Char]): Stream[IO, Char] = {
     skipOne(s).pull.peek1.flatMap {
-      case Some((']', next)) => next.pull.uncons1
+      case Some((']', next)) => next.tail.pull.echo
       case Some((',', next)) =>
-        takeTilEnd(next.tail).pull.echo
+        takeTilArrayEnd(next.tail).pull.echo
       case Some((unexp, next)) => Pull.raiseError[IO](PError(',', Some(unexp)))
       case None                => Pull.raiseError[IO](PError(',', None))
     }.stream
@@ -118,11 +119,9 @@ package object parser {
       case Some(('[', next)) =>
         next.pull.peek1.flatMap {
           // check if it's empty array
-          case Some((']', next))   => next.tail.pull.uncons1
-          case Some((other, next)) =>
-            // wip: pick 1 and take comma, then continue
-            takeTilEnd(next).pull.echo
-          case None => Pull.raiseError[IO](PError(']', None))
+          case Some((']', next))   => next.tail.pull.echo
+          case Some((other, next)) => takeTilArrayEnd(next).pull.echo
+          case None                => Pull.raiseError[IO](PError(']', None))
         }
       case Some((ue, next)) =>
         Pull.raiseError[IO](PError('[', Some(ue)))
