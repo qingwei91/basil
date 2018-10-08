@@ -20,10 +20,12 @@ package object parser {
     case GetKey(key, next) => parseObj(key, next)
   }
 
+  // todo: need to ignore whitespaces
   val parseString: Parse[IO] = { stream =>
     stream.pull.uncons1
       .flatMap {
         case Some(('"', nextStream)) =>
+          // todo: this does not ensure string complete
           nextStream.pull.takeThrough(_ != '"')
         case Some((other, _)) =>
           Pull.raiseError[IO](PError('\"', Some(other)))
@@ -44,13 +46,13 @@ package object parser {
   }
 
   def parseArrayItem(n: Int, next: Parse[IO]): Parse[IO] = { stream =>
-    def recurse(n: Int, next: Parse[IO]): Parse[IO] = { stream =>
+    def recurse(n: Int): Parse[IO] = { stream =>
       if (n == 0) {
         next(stream)
       } else {
         {
           val nMinus1Stream = skipOne.andThen(skipComma)(stream)
-          val end           = recurse(n - 1, next)(nMinus1Stream)
+          val end           = recurse(n - 1)(nMinus1Stream)
           end
         }
       }
@@ -59,7 +61,7 @@ package object parser {
     stream.pull.uncons1
       .flatMap {
         case Some(('[', nextStream)) =>
-          val e = recurse(n, next)(nextStream)
+          val e = recurse(n)(nextStream)
           Stream.eval(e).pull.echo
         case Some((x, _)) => Pull.raiseError[IO](PError('[', Some(x)))
         case None         => Pull.raiseError[IO](PError('[', None))
@@ -137,8 +139,62 @@ package object parser {
     }
   }
 
-  def parseObj(k: String, next: Parse[IO]): Parse[IO] = { wrapper =>
-    ???
+  def accUntil[A](stream: Stream[IO, A])(
+      until: A => Boolean): Stream[IO, (Vector[A], Stream[IO, A])] = {
+    def recurse(stream: Stream[IO, A])(acc: Vector[A]): Stream[IO, (Vector[A], Stream[IO, A])] = {
+      stream.pull.uncons1.flatMap {
+        case Some((a, next)) if until(a) =>
+          Pull.output1((acc, next))
+        case Some((a, next)) =>
+          recurse(next)(acc :+ a).pull.echo
+        case None =>
+          Pull.raiseError[IO](PError("Condition not met", None))
+      }.stream
+    }
+
+    recurse(stream)(Vector.empty)
+  }
+
+  implicit def perror(e: PError): Pull[IO, INothing, INothing] = Pull.raiseError[IO](e)
+
+  def parseObjKey(stream: Stream[IO, Char]): Stream[IO, (String, Stream[IO, Char])] = {
+
+    stream.pull.uncons1.flatMap {
+      case Some(('"', nextStream)) =>
+        val keyStr = accUntil(nextStream)(_ == '"')
+
+        keyStr.pull.uncons1.flatMap {
+          case Some(((key, afterKey), _)) =>
+            afterKey.pull.uncons1.flatMap {
+              case Some((':', next)) => Pull.output1(key.mkString -> next)
+              case Some((o, next))   => PError(':', o)
+              case None              => PError(':', None)
+            }
+          case None => PError("No Key", None)
+        }
+
+      case other => PError('"', other.map(_._1))
+    }.stream
+
+  }
+
+  def parseObj(k: String, nextOp: Parse[IO]): Parse[IO] = { stream =>
+    def skipUntilKey: StreamConsumer = { s =>
+      parseObjKey(s).pull.uncons1.flatMap {
+        case Some(((key, nextS), _)) if key == k =>
+          nextS.pull.echo
+        case Some(((key, nextS), _)) =>
+          skipUntilKey(nextS).pull.echo
+        case None =>
+          Pull.raiseError[IO](PError("Unexpected termination", None))
+      }.stream
+    }
+
+    nextOp {
+      stream.pull.uncons1.flatMap {
+        case Some(('{', next)) => skipUntilKey(next).pull.echo
+      }.stream
+    }
   }
 
   def parse(exp: Fix[ParseOps]): Parse[IO] = {
@@ -150,11 +206,13 @@ package object parser {
   }
 }
 
-case class PError(expect: String, received: Option[Char])
-    extends Exception(s"Expect [$expect], got $received")
+case class PError(expect: String, received: Option[Char])(implicit l: sourcecode.Line)
+    extends Exception(s"Expect [$expect], got $received at line: $l")
 
 object PError {
-  def apply(expect: Char, received: Option[Char]): PError = new PError(expect.toString, received)
+  def apply(expect: Char, received: Option[Char])(implicit l: sourcecode.Line): PError =
+    new PError(expect.toString, received)
 
-  def apply(expect: Char, received: Char): PError = apply(expect, Some(received))
+  def apply(expect: Char, received: Char)(implicit l: sourcecode.Line): PError =
+    apply(expect, Some(received))
 }

@@ -27,7 +27,7 @@ class ParserSpec
       }
     }
     "parse array" in {
-      forAll(jsArrGen(12, Gen.oneOf(jstrGen, jsArrGen(12, jstrGen)))) { js =>
+      forAll(jsArrGen(12, Gen.oneOf(jstrGen, jstrGen))) { js =>
         val i = (js.arr.size / 2)
 
         val jsonStr = compact(render(js)).toCharArray
@@ -38,7 +38,6 @@ class ParserSpec
         decoded.unsafeRunSync() mustBe a[JString]
       }
     }
-
     "parse array specific" in {
       val jsonStr = compact(render(JArray(List(JString(""))))).toCharArray
 
@@ -46,7 +45,14 @@ class ParserSpec
         parseArrayItem(0, parseString)(Stream(jsonStr: _*))
       decoded.unsafeRunSync() mustBe a[JString]
     }
+    "parse object" in {
+      forAll(jsObjGen("myKey", jsArrGen(2, jstrGen))) { obj =>
+        val jsonStr = compact(render(obj)).toCharArray
 
+        val decoded = parseObj("myKey", parseArrayItem(1, parseString))(Stream(jsonStr: _*))
+        decoded.unsafeRunSync() mustBe a[JString]
+      }
+    }
     "work" ignore {
       forAll(opsGen(5)) { ops =>
         val js    = jsGen(ops).sample.get
@@ -104,7 +110,7 @@ trait ParserGen {
     JDouble(n)
   }
 
-  def jsObjGen(key: String, gen: Gen[JValue]): Gen[JValue] = {
+  def jsObjGen(key: String, gen: Gen[JValue]): Gen[JObject] = {
     for {
       v <- gen
     } yield {
