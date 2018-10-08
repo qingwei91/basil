@@ -10,6 +10,7 @@ libraryDependencies ++= Seq(
   "org.typelevel"        %% "cats-effect"     % "1.0.0",
   "com.github.mpilquist" %% "simulacrum"      % "0.13.0",
   "org.spire-math"       %% "jawn-parser"     % "0.12.1",
+  "com.lihaoyi"          %% "sourcecode"      % "0.1.4",
   "co.fs2"               %% "fs2-core"        % "1.0.0",
   "org.json4s"           %% "json4s-native"   % "3.5.4",
   "org.scalatest"        %% "scalatest"       % "3.0.1" % "test",
