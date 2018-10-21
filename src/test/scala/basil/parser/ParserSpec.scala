@@ -1,14 +1,13 @@
 package basil.parser
 
+import basil.End
 import fs2.Stream
-import org.scalatest._
-import ParseOpsConstructor._
 import matryoshka.data.Fix
 import org.json4s._
-import org.scalatest.prop.GeneratorDrivenPropertyChecks
-import org.scalacheck.Arbitrary._
-import org.scalacheck.Gen
 import org.json4s.native.JsonMethods._
+import org.scalacheck.Gen
+import org.scalatest._
+import org.scalatest.prop.GeneratorDrivenPropertyChecks
 
 class ParserSpec
     extends WordSpec
@@ -24,6 +23,22 @@ class ParserSpec
         val decoded = parseString(Stream.apply(jsonStr: _*))
 
         decoded.unsafeRunSync() mustBe js
+      }
+    }
+    "parse boolean" in {
+      List(JBool.True, JBool.False).foreach { js =>
+        val jsonStr = compact(render(js)).toCharArray
+
+        val decoded = parseBoolean(Stream.apply(jsonStr: _*))
+
+        decoded.unsafeRunSync() mustBe js
+      }
+    }
+    "parse number" in {
+      forAll(jnumGen) { num =>
+        val jsonStr = compact(render(num)).toCharArray
+        val decoded = parseNumber(End)(Stream.apply(jsonStr: _*))
+        decoded.unsafeRunSync() mustBe num
       }
     }
     "parse array" in {
