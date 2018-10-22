@@ -1,6 +1,5 @@
 package basil.parser
 
-import basil.End
 import fs2.Stream
 import matryoshka.data.Fix
 import org.json4s._
@@ -8,6 +7,7 @@ import org.json4s.native.JsonMethods._
 import org.scalacheck.Gen
 import org.scalatest._
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
+import basil.parser.Parser._
 
 class ParserSpec
     extends WordSpec
@@ -22,7 +22,7 @@ class ParserSpec
 
         val decoded = parseString(Stream.apply(jsonStr: _*))
 
-        decoded.unsafeRunSync() mustBe js
+        decoded.unsafeRunSync()._1 mustBe js
       }
     }
     "parse boolean" in {
@@ -31,14 +31,14 @@ class ParserSpec
 
         val decoded = parseBoolean(Stream.apply(jsonStr: _*))
 
-        decoded.unsafeRunSync() mustBe js
+        decoded.unsafeRunSync()._1 mustBe js
       }
     }
     "parse number" in {
       forAll(jnumGen) { num =>
         val jsonStr = compact(render(num)).toCharArray
         val decoded = parseNumber(End)(Stream.apply(jsonStr: _*))
-        decoded.unsafeRunSync() mustBe num
+        decoded.unsafeRunSync()._1 mustBe num
       }
     }
     "parse array" in {
@@ -50,7 +50,7 @@ class ParserSpec
         val decoded =
           parseArrayItem(i, parseString)(Stream(jsonStr: _*))
 
-        decoded.unsafeRunSync() mustBe a[JString]
+        decoded.unsafeRunSync()._1 mustBe a[JString]
       }
     }
     "parse array specific" in {
@@ -58,14 +58,14 @@ class ParserSpec
 
       val decoded =
         parseArrayItem(0, parseString)(Stream(jsonStr: _*))
-      decoded.unsafeRunSync() mustBe a[JString]
+      decoded.unsafeRunSync()._1 mustBe a[JString]
     }
     "parse object" in {
       forAll(jsObjGen("myKey", jsArrGen(2, jstrGen))) { obj =>
         val jsonStr = compact(render(obj)).toCharArray
 
         val decoded = parseObj("myKey", parseArrayItem(1, parseString))(Stream(jsonStr: _*))
-        decoded.unsafeRunSync() mustBe a[JString]
+        decoded.unsafeRunSync()._1 mustBe a[JString]
       }
     }
     "work" ignore {
@@ -73,9 +73,9 @@ class ParserSpec
         val js    = jsGen(ops).sample.get
         val jsStr = compact(render(js)).toCharArray
 
-        val decoded = parse(Fix(ops))(Stream(jsStr: _*))
+        val decoded = Parser.parse(Fix(ops))(Stream(jsStr: _*))
 
-        decoded.unsafeRunSync() mustBe js
+        decoded.unsafeRunSync()._1 mustBe js
       }
     }
   }
@@ -120,7 +120,7 @@ trait ParserGen {
   }
 
   val jnumGen = for {
-    n <- Gen.choose(-10000, 10000)
+    n <- Gen.choose(-10000.0, 10000.0)
   } yield {
     JDouble(n)
   }

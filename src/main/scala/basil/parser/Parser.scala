@@ -1,29 +1,20 @@
-package basil
+package basil.parser
 
-import cats.effect._
+import cats.effect.IO
 import fs2._
 import matryoshka._
 import matryoshka.data.Fix
 import matryoshka.implicits._
 import org.json4s.JsonAST._
 
-package object parser {
+object Parser {
   type CharStream    = Stream[IO, Char]
-  type Parse[Eff[_]] = Stream[IO, Char] => Eff[JValue]
+  type Parse[Eff[_]] = CharStream => Eff[(JValue, CharStream)]
 
   type PerLevelParse = Algebra[ParseOps, Parse[IO]]
 
-  val parsing: PerLevelParse = {
-    case GetString         => parseString
-    case GetBool           => parseBoolean
-    case GetNum            => parseNumber(End)
-    case GetN(n, next)     => parseArrayItem(n, next)
-    case GetKey(key, next) => parseObj(key, next)
-    case GetNullable(ops)  => ops
-  }
-
-  implicit class StreamHelper(s: Stream[IO, Char]) {
-    def dropExpected(expectation: List[Char]): Stream[IO, Char] = {
+  implicit class StreamHelper(s: CharStream) {
+    def dropExpected(expectation: List[Char]): CharStream = {
       expectation match {
         case h :: t =>
           s.pull.uncons1.flatMap {
@@ -69,29 +60,34 @@ package object parser {
     }
   }
 
-  type StreamConsumer = Stream[IO, Char] => Stream[IO, Char]
+  type StreamConsumer = CharStream => CharStream
 
   private val skipComma: StreamConsumer = { stream =>
     stream.pull.uncons1.flatMap {
       case Some((',', next)) => next.pull.echo
-      case Some((u, _))      => Pull.raiseError[IO](PError(',', u))
-      case None              => Pull.raiseError[IO](PError(',', None))
+      case Some((u, _))      => PError(',', u)
+      case None              => PError(',', None)
     }.stream
   }
-  private val skipStr: StreamConsumer = s => s.drop(1).dropThrough(_ != '"')
-  private def skipBool(b: Boolean): StreamConsumer = s => {
-    val boolStr = if (b) "true" else "false"
-    s.dropExpected(boolStr.toCharArray.toList)
+
+  private def skipNum(expectedTerminator: ExpectedTerminator): StreamConsumer = { s =>
+    Stream
+      .eval(
+        parseNumber(expectedTerminator)(s).map(_._2)
+      )
+      .flatten
   }
 
-  private def skipOne: StreamConsumer = { stream =>
+  // Does not skip intermediate terminator, eg. `,`
+  private def skipOne(term: ExpectedTerminator): StreamConsumer = { stream =>
     stream.pull.peek1.flatMap {
       case Some(('"', next))      => skipStr(next).pull.echo
-      case Some(('t', next))      => skipBool(true)(next).pull.echo
-      case Some(('f', next))      => skipBool(false)(next).pull.echo
-      case Some((digit(_), next)) => ??? // todo: skip number
+      case Some(('t', next))      => skipBool(next).pull.echo
+      case Some(('f', next))      => skipBool(next).pull.echo
+      case Some((digit(_), next)) => skipNum(term)(next).pull.echo
+      case Some((sign(_), next))  => skipNum(term)(next).pull.echo
       case Some(('[', next))      => skipArr(next).pull.echo
-      case Some(('{', _))         => ??? // todo: skip object
+      case Some(('{', next))      => skipObject(next).pull.echo
       case Some((unexp, _))       => PError("One of(t, f, [, {)", unexp)
       case None                   => PError("One of(t, f, [, {)", None)
     }.stream
@@ -108,32 +104,36 @@ package object parser {
       case (ue, _) => PError('[', Some(ue))
     }.stream
   }
-
-  private def takeTilArrayEnd(s: Stream[IO, Char]): Stream[IO, Char] = {
-    skipOne(s).pull.peek1.flatSome {
+  private def takeTilArrayEnd(s: CharStream): CharStream = {
+    skipOne(OneOf(List(Bracket, Comma)))(s).pull.peek1.flatSome {
       case (']', next) => next.tail.pull.echo
       case (',', next) => takeTilArrayEnd(next.tail).pull.echo
       case (unexp, _)  => Pull.raiseError[IO](PError(',', Some(unexp)))
     }.stream
   }
-
-  private object digit {
-    private val digits = (0 to 9).map(x => Character.forDigit(x, 10))
-    def unapply(arg: Char): Option[Char] = {
-      Some(arg).filter(digits.contains)
-    }
-    def notDigit(char: Char): Boolean = !digits.contains(char)
-  }
-  private object sign {
-    def unapply(arg: Char): Option[Char] = {
-      if (arg == '-' || arg == '+') {
-        Some(arg)
-      } else {
-        None
-      }
+  private def skipKVPair: StreamConsumer = { s =>
+    parseObjKey(s).flatMap {
+      case (_, next) =>
+        skipOne(OneOf(List(Comma, CurlyBrace)))(next).pull.peek1.flatSome {
+          case (',', next) => skipKVPair(next.tail).pull.echo
+          case ('}', next) => next.tail.pull.echo
+          case (uexp, _)   => PError(", or }", uexp)
+        }.stream
     }
   }
 
+  private def skipObject: StreamConsumer = { s =>
+    s.pull.uncons1.flatSome {
+      case ('{', next) =>
+        skipKVPair(next).pull.uncons1.flatSome {
+          case ('}', next) => next.pull.echo
+          case (uexp, _)   => PError('}', uexp)
+        }
+      case (uexp, _) => PError('{', uexp)
+    }.stream
+  }
+
+  // does not include the terminator
   private def accUntil[A](stream: Stream[IO, A])(
       until: A => Boolean): Stream[IO, (Vector[A], Stream[IO, A])] = {
     def recurse(stream: Stream[IO, A])(acc: Vector[A]): Stream[IO, (Vector[A], Stream[IO, A])] = {
@@ -152,7 +152,7 @@ package object parser {
 
   implicit def perror(e: PError): Pull[IO, INothing, INothing] = Pull.raiseError[IO](e)
 
-  private def parseObjKey(stream: Stream[IO, Char]): Stream[IO, (String, Stream[IO, Char])] = {
+  private def parseObjKey(stream: CharStream): Stream[IO, (String, CharStream)] = {
 
     stream.pull.uncons1.flatMap {
       case Some(('"', nextStream)) =>
@@ -177,32 +177,49 @@ package object parser {
     stream.pull.uncons1
       .flatMap {
         case Some(('"', nextStream)) =>
-          // todo: this does not ensure string complete
-          nextStream.pull.takeThrough(_ != '"')
-        case Some((other, _)) =>
-          Pull.raiseError[IO](PError('\"', Some(other)))
-        case None => Pull.raiseError[IO](PError('\"', None))
+          accUntil(nextStream)(_ == '"').pull.echo
+        case Some((other, _)) => PError('\"', Some(other))
+        case None             => PError('\"', None)
       }
       .stream
+      .head
       .compile
-      .toVector
-      .map(x => JString(x.dropRight(1).mkString))
+      .lastOrError
+      .map {
+        case (x, next) => JString(x.mkString) -> next
+      }
   }
   val parseBoolean: Parse[IO] = { stream =>
     stream.isFollowedBy("true".toCharArray.toList).flatMap { isTrue =>
       if (isTrue) {
-        IO.pure(JBool.True)
+
+        IO.pure(JBool.True -> stream.drop(4))
       } else {
         stream.isFollowedBy("false".toCharArray.toList).flatMap { isFalse =>
-          if (isFalse) IO.pure(JBool.False) else IO.raiseError(PError("True or false", None))
+          if (isFalse) {
+            IO.pure(JBool.False -> stream.drop(5))
+          } else {
+            IO.raiseError(PError("True or false", None))
+          }
         }
       }
     }
   }
 
+  private val skipStr: StreamConsumer  = s => Stream.eval(parseString(s).map(_._2)).flatten
+  private val skipBool: StreamConsumer = s => Stream.eval(parseBoolean(s).map(_._2)).flatten
+
   import Pull.output1
+
+  /**
+    * return (Vector[Char], Option[Char], CharStream)
+    * a - part1 num
+    * b - optional terminator char, None indicate no part2
+    *     should only have 3 possibilities, Some('.'), Some('e') or None (optimization chance)
+    * c - subsequent stream
+    */
   private def parseNumPart1(charStream: CharStream)(
-      term: ExpectedTerminator): Stream[IO, (Vector[Char], Option[(Char, CharStream)])] = {
+      term: ExpectedTerminator): Stream[IO, (Vector[Char], Option[Char], CharStream)] = {
     def parseSign(s: CharStream): Stream[IO, (Option[Char], CharStream)] = {
       s.pull.peek1.flatSome {
         case (sign(sChar), next) => Pull.output1(Some(sChar) -> next.tail)
@@ -211,17 +228,17 @@ package object parser {
     }
 
     def recurse(acc: Vector[Char],
-                s: CharStream): Stream[IO, (Vector[Char], Option[(Char, CharStream)])] = {
+                s: CharStream): Stream[IO, (Vector[Char], Option[Char], CharStream)] = {
 
       s.pull.uncons1.flatFold {
-        case (digit(d), nextS)           => recurse(acc :+ d, nextS).pull.echo
-        case (t, _) if term.matchChar(t) => output1(acc -> None)
-        case (dot, nextS) if dot == '.'  => output1(acc -> Some(dot -> nextS))
-        case (e, nextS) if e == 'e'      => output1(acc -> Some(e -> nextS))
-        case (uexp, _)                   => PError(s"Digit or $term", uexp)
+        case (digit(d), nextS)               => recurse(acc :+ d, nextS).pull.echo
+        case (t, nextS) if term.matchChar(t) => output1((acc, None, nextS))
+        case (dot, nextS) if dot == '.'      => output1((acc, Some(dot), nextS))
+        case (e, nextS) if e == 'e'          => output1((acc, Some(e), nextS))
+        case (uexp, _)                       => PError(s"Digit or $term", uexp)
       } {
         if (term == End) {
-          Pull.output1(acc -> None)
+          Pull.output1((acc, None, Stream.empty))
         } else {
           PError("Unexpected termination", None)
         }
@@ -232,28 +249,27 @@ package object parser {
       case (Some(s), next) => recurse(Vector(s), next)
       case (None, next)    => recurse(Vector.empty, next)
     }
-
-    /**
-    * - Terminated: Vector[Char]
-    * - (Vector[Char], '.', CharStream)
-    * - (Vector[Char], 'e', CharStream)
-    * - Unexpected char
-    * - Unexpected end of char
-    */
   }
 
+  /**
+    * (Vector[Char], Boolean, CharStream)
+    * a - part2 num
+    * b - true is terminated
+    * c - subsequent stream
+    */
   private def parseNumPart2(charStream: CharStream, p1Term: Char)(
-      term: ExpectedTerminator): Stream[IO, (Vector[Char], Option[CharStream])] = {
+      term: ExpectedTerminator): Stream[IO, (Vector[Char], Boolean, CharStream)] = {
+
     def recurse(acc: Vector[Char],
-                s: CharStream): Stream[IO, (Vector[Char], Option[CharStream])] = {
+                s: CharStream): Stream[IO, (Vector[Char], Boolean, CharStream)] = {
       s.pull.uncons1.flatFold {
         case (digit(d), nextS)                       => recurse(acc :+ d, nextS).pull.echo
-        case (t, _) if term.matchChar(t)             => output1(acc -> None)
-        case (e, nextS) if e == 'e' && p1Term == '.' => output1(acc -> Some(nextS))
+        case (t, nextS) if term.matchChar(t)         => output1((acc, true, nextS))
+        case (e, nextS) if e == 'e' && p1Term == '.' => output1((acc, false, nextS))
         case (uexp, _)                               => PError(s"Digit or $term", uexp)
       } {
         if (term == End) {
-          Pull.output1(acc -> None)
+          Pull.output1((acc, true, Stream.empty))
         } else {
           PError("Unexpected termination", None)
         }
@@ -264,37 +280,40 @@ package object parser {
   }
 
   private def parseNumPart3(charStream: CharStream)(
-      term: ExpectedTerminator): Stream[IO, Vector[Char]] = {
-    def recurse(acc: Vector[Char], s: CharStream): Stream[IO, Vector[Char]] = {
+      term: ExpectedTerminator): Stream[IO, (Vector[Char], CharStream)] = {
+    def recurse(acc: Vector[Char], s: CharStream): Stream[IO, (Vector[Char], CharStream)] = {
       s.pull.uncons1.flatSome {
-        case (digit(d), nextS)           => recurse(acc :+ d, nextS).pull.echo
-        case (t, _) if term.matchChar(t) => output1(acc)
-        case (uexp, _)                   => PError(s"Digit or $term", uexp)
+        case (digit(d), nextS)              => recurse(acc :+ d, nextS).pull.echo
+        case (t, next) if term.matchChar(t) => output1(acc -> next)
+        case (uexp, _)                      => PError(s"Digit or $term", uexp)
       }.stream
     }
 
     recurse(Vector.empty, charStream)
   }
-
   def parseNumber(terminator: ExpectedTerminator): Parse[IO] = { stream =>
     parseNumPart1(stream)(terminator)
       .flatMap {
-        case (part1, Some((p1T, next))) =>
+        case (part1, Some(p1T), next) =>
           parseNumPart2(next, p1T)(terminator).flatMap {
-            case (part2, Some(next)) =>
+            case (part2, false, next) => // not terminated
               parseNumPart3(next)(terminator)
-                .flatMap { part3 =>
-                  Stream.apply(part1.:+(p1T).++(part2).:+('e').++(part3))
+                .flatMap {
+                  case (part3, next) =>
+                    val fullStr = (part1 :+ p1T) ++ (part2 :+ 'e') ++ part3
+                    Stream.apply(fullStr -> next)
                 }
-            case (part2, None) => Stream.apply(part1.:+(p1T).++(part2))
+            case (part2, true, next) => // terminated
+              val combined = (part1 :+ p1T) ++ part2
+              Stream.apply(combined -> next)
           }
-        case (part1, None) => Stream.apply(part1)
+        case (part1, None, next) => Stream.apply(part1 -> next)
       }
       .head
       .compile
       .lastOrError
-      .map { numChars =>
-        JDouble(numChars.mkString.toDouble)
+      .map {
+        case (numChars, next) => JDouble(numChars.mkString.toDouble) -> next
       }
   }
   def parseArrayItem(n: Int, next: Parse[IO]): Parse[IO] = { stream =>
@@ -302,11 +321,9 @@ package object parser {
       if (n == 0) {
         next(stream)
       } else {
-        {
-          val nMinus1Stream = skipOne.andThen(skipComma)(stream)
-          val end           = recurse(n - 1)(nMinus1Stream)
-          end
-        }
+        val nMinus1Stream = skipOne(Comma).andThen(skipComma)(stream)
+        val end           = recurse(n - 1)(nMinus1Stream)
+        end
       }
     }
 
@@ -321,9 +338,7 @@ package object parser {
       .stream
       .head
       .compile
-      .toVector
-      .map(_.head)
-
+      .lastOrError
   }
   def parseObj(k: String, nextOp: Parse[IO]): Parse[IO] = { stream =>
     def skipUntilKey: StreamConsumer = { s =>
@@ -341,7 +356,33 @@ package object parser {
     }
   }
 
+  val parsing: PerLevelParse = {
+    case GetString         => parseString
+    case GetBool           => parseBoolean
+    case GetNum            => parseNumber(End)
+    case GetN(n, next)     => parseArrayItem(n, next)
+    case GetKey(key, next) => parseObj(key, next)
+    case GetNullable(ops)  => ops
+  }
+
   def parse(exp: Fix[ParseOps]): Parse[IO] = {
     exp.cata(parsing)
+  }
+}
+
+object digit {
+  private val digits = (0 to 9).map(x => Character.forDigit(x, 10))
+  def unapply(arg: Char): Option[Char] = {
+    Some(arg).filter(digits.contains)
+  }
+  def notDigit(char: Char): Boolean = !digits.contains(char)
+}
+object sign {
+  def unapply(arg: Char): Option[Char] = {
+    if (arg == '-' || arg == '+') {
+      Some(arg)
+    } else {
+      None
+    }
   }
 }
