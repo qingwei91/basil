@@ -1,5 +1,6 @@
 package basil.parser
 
+import matryoshka.data.Fix
 import scalaz._
 import scalaz.syntax.applicative._
 
@@ -25,5 +26,28 @@ object ParseOps {
         case GetKey(k, a)   => f(a).map(b => GetKey(k, b))
       }
     }
+  }
+  type ParseOpsF    = ParseOps[Fix[ParseOps]]
+  type StringEff[A] = Const[String, A]
+  implicit val showRecursiveOps: Show[ParseOpsF] = Show.shows[ParseOpsF] {
+    case GetString => GetString.toString
+    case GetNum    => GetNum.toString
+    case GetBool   => GetBool.toString
+    case GetNullable(a) =>
+      s"""GetNullable {
+        |  ${showRecursiveOps.shows(a.unFix)}
+        |}""".stripMargin
+    case GetN(n, a) =>
+      s"""
+         |GetN($n) {
+         |  ${showRecursiveOps.shows(a.unFix)}
+         |}
+       """.stripMargin
+    case GetKey(k, a) =>
+      s"""
+         |GetKey($k) {
+         |  ${showRecursiveOps.shows(a.unFix)}
+         |}
+       """.stripMargin
   }
 }
