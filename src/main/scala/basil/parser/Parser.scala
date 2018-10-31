@@ -37,7 +37,7 @@ object Parser {
                                                         path: Vector[PPath]): Pull[IO, O2, R2] = {
       p.flatMap {
         case Some(x) => f(x)
-        case None    => PError.termination
+        case None    => ParseFailure.termination
       }
     }
     def flatFold[O2 >: O, R2](f: R => Pull[IO, O2, R2])(
@@ -54,8 +54,8 @@ object Parser {
   private def skipComma(implicit path: Vector[PPath]): StreamConsumer = { stream =>
     stream.pull.uncons1.flatMap {
       case Some((',', next)) => next.pull.echo
-      case Some((u, _))      => PError(",", u.toString, path)
-      case None              => PError.termination
+      case Some((u, _))      => ParseFailure(",", u.toString, path)
+      case None              => ParseFailure.termination
     }.stream
   }
 
@@ -79,8 +79,8 @@ object Parser {
         case Some((sign(_), next))  => skipNum(term)(path)(next).pull.echo
         case Some(('[', next))      => skipArr(path)(next).pull.echo
         case Some(('{', next))      => skipObject(path)(next).pull.echo
-        case Some((unexp, _))       => PError("One of(t, f, [, {)", unexp.toString, path)
-        case None                   => PError.termination
+        case Some((unexp, _))       => ParseFailure("One of(t, f, [, {)", unexp.toString, path)
+        case None                   => ParseFailure.termination
       }.stream
   }
   private def skipArr(implicit path: Vector[PPath]): StreamConsumer = { stream =>
@@ -92,14 +92,14 @@ object Parser {
           case (']', next) => next.tail.pull.echo
           case (_, next)   => takeTilArrayEnd(next)(path).pull.echo
         }
-      case (ue, _) => PError("[", ue.toString, path)
+      case (ue, _) => ParseFailure("[", ue.toString, path)
     }.stream
   }
   private def takeTilArrayEnd(s: CharStream)(implicit path: Vector[PPath]): CharStream = {
     skipOne(OneOf(List(Bracket, Comma)))(path)(s).pull.peek1.flatSome {
       case (']', next) => next.tail.pull.echo
       case (',', next) => takeTilArrayEnd(next.tail)(path).pull.echo
-      case (unexp, _)  => PError(",", unexp.toString, path)
+      case (unexp, _)  => ParseFailure(",", unexp.toString, path)
     }.stream
   }
   private def skipKVPair(implicit path: Vector[PPath]): StreamConsumer = { s =>
@@ -108,7 +108,7 @@ object Parser {
         skipOne(OneOf(List(Comma, CurlyBrace)))(path)(next).pull.peek1.flatSome {
           case (',', next) => skipKVPair(path)(next.tail).pull.echo
           case ('}', next) => next.pull.echo
-          case (uexp, _)   => PError(", or }", uexp.toString, path)
+          case (uexp, _)   => ParseFailure(", or }", uexp.toString, path)
         }.stream
     }
   }
@@ -118,9 +118,9 @@ object Parser {
       case ('{', next) =>
         skipKVPair(path)(next).pull.uncons1.flatSome {
           case ('}', next) => next.pull.echo
-          case (uexp, _)   => PError("}", uexp.toString, path)
+          case (uexp, _)   => ParseFailure("}", uexp.toString, path)
         }
-      case (uexp, _) => PError("{", uexp.toString, path)
+      case (uexp, _) => ParseFailure("{", uexp.toString, path)
     }.stream
   }
 
@@ -131,14 +131,14 @@ object Parser {
       stream.pull.uncons1.flatMap {
         case Some((a, next)) if until(a) => Pull.output1((acc, next))
         case Some((a, next))             => recurse(next)(acc :+ a).pull.echo
-        case None                        => PError.termination
+        case None                        => ParseFailure.termination
       }.stream
     }
 
     recurse(stream)(Vector.empty)
   }
 
-  implicit def perror(e: PError): Pull[IO, INothing, INothing] = Pull.raiseError[IO](e)
+  implicit def perror(e: ParseFailure): Pull[IO, INothing, INothing] = Pull.raiseError[IO](e)
 
   private def parseObjKey(stream: CharStream)(
       implicit path: Vector[PPath]): Stream[IO, (String, CharStream)] = {
@@ -151,12 +151,12 @@ object Parser {
           case Some(((key, afterKey), _)) =>
             afterKey.pull.uncons1.flatSome {
               case (':', next) => Pull.output1(key.mkString -> next)
-              case (o, _)      => PError(": for key finding", o.toString, path)
+              case (o, _)      => ParseFailure(": for key finding", o.toString, path)
             }
-          case None => PError("Key not found", path)
+          case None => ParseFailure("Key not found", path)
         }
 
-      case (uexp, _) => PError("\" to start a key", uexp.toString, path)
+      case (uexp, _) => ParseFailure("\" to start a key", uexp.toString, path)
     }.stream
 
   }
@@ -166,7 +166,7 @@ object Parser {
     stream.pull.uncons1
       .flatSome {
         case ('"', nextStream) => accUntil(nextStream)(_ == '"')(path).pull.echo
-        case (other, _)        => PError(s"""String should starts with ", but found $other""", path)
+        case (other, _)        => ParseFailure(s"""String should starts with ", but found $other""", path)
       }
       .stream
       .head
@@ -186,7 +186,7 @@ object Parser {
           if (isFalse) {
             IO.pure(JBool.False -> stream.drop(5))
           } else {
-            IO.raiseError(PError("Boolean must be true or false", path))
+            IO.raiseError(ParseFailure("Boolean must be true or false", path))
           }
         }
       }
@@ -226,12 +226,12 @@ object Parser {
         case (t, nextS) if term.matchChar(t) => output1((acc, None, nextS.cons1(t)))
         case (dot, nextS) if dot == '.'      => output1((acc, Some(dot), nextS))
         case (e, nextS) if e == 'e'          => output1((acc, Some(e), nextS))
-        case (uexp, _)                       => PError(s"Digit or $term", uexp.toString, path)
+        case (uexp, _)                       => ParseFailure(s"Digit or $term", uexp.toString, path)
       } {
         if (term == End) {
           Pull.output1((acc, None, Stream.empty))
         } else {
-          PError.termination
+          ParseFailure.termination
         }
       }.stream
     }
@@ -257,12 +257,12 @@ object Parser {
         case (digit(d), nextS)                     => recurse(acc :+ d, nextS).pull.echo
         case (t, nextS) if term.matchChar(t)       => output1((acc, true, nextS.cons1(t)))
         case (exponent(_), nextS) if p1Term == '.' => output1((acc, false, nextS))
-        case (uexp, _)                             => PError(s"Digit or $term", uexp.toString, path)
+        case (uexp, _)                             => ParseFailure(s"Digit or $term", uexp.toString, path)
       } {
         if (term == End) {
           Pull.output1((acc, true, Stream.empty))
         } else {
-          PError.termination
+          ParseFailure.termination
         }
       }.stream
     }
@@ -276,12 +276,12 @@ object Parser {
       s.pull.uncons1.flatFold {
         case (digit(d), nextS)              => recurse(acc :+ d, nextS).pull.echo
         case (t, next) if term.matchChar(t) => output1(acc -> next.cons1(t))
-        case (uexp, _)                      => PError(s"Digit or $term", uexp.toString, path)
+        case (uexp, _)                      => ParseFailure(s"Digit or $term", uexp.toString, path)
       } {
         if (term == End) {
           Pull.output1((acc, Stream.empty))
         } else {
-          PError.termination
+          ParseFailure.termination
         }
       }.stream
     }
@@ -317,6 +317,7 @@ object Parser {
         case (numChars, next) => JDouble(numChars.mkString.toDouble) -> next
       }
   }
+
   def parseArrayItem(n: Int, next: Parse[IO]): Parse[IO] = { implicit path => stream =>
     def recurse(left: Int): Parse[IO] = { implicit path => stream =>
       if (left == 0) {
@@ -333,7 +334,7 @@ object Parser {
         case ('[', nextStream) =>
           val e = recurse(n)(path \ n)(nextStream)
           Stream.eval(e).pull.echo
-        case (x, _) => PError("[", x.toString, path \ n)
+        case (x, _) => ParseFailure("[", x.toString, path \ n)
       }
       .stream
       .head
@@ -348,12 +349,12 @@ object Parser {
       }.stream
     }
     if (k.isEmpty) {
-      IO.raiseError(PError("Key not found", "", path \ k))
+      IO.raiseError(ParseFailure("Key not found", "", path \ k))
     } else {
       nextOp(path \ k) {
         stream.pull.uncons1.flatSome {
           case ('{', next) => skipUntilKey(path \ k)(next).pull.echo
-          case (c, _)      => PError("{", c.toString, path)
+          case (c, _)      => ParseFailure("{", c.toString, path)
         }.stream
       }
     }
