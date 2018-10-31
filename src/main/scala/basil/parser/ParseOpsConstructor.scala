@@ -1,6 +1,6 @@
 package basil.parser
 
-import matryoshka.data.Fix
+import schemes.Fix
 
 trait ParseOpsConstructor {
   implicit class ContinuableBy(c: Continuable[ParseOps]) {
@@ -12,7 +12,9 @@ trait ParseOpsConstructor {
       Continuable(cont.andThen(c.cont))
 
     }
-    def getNum: ExprEnd[ParseOps] = ExprEnd(c.cont(Fix[ParseOps](GetNum)))
+    def getNum: ExprEnd[ParseOps] = {
+      ExprEnd(c.cont(Fix[ParseOps](GetNum(End))))
+    }
 
     def getN(n: Int): Continuable[ParseOps] = {
       val cont: Fix[ParseOps] => Fix[ParseOps] = { next =>

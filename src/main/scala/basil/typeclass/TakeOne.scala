@@ -1,9 +1,10 @@
-package basil.parser
+package basil.typeclass
 
 import cats.effect.IO
 import cats.syntax.eq._
 import cats.syntax.flatMap._
-import cats.{Eq, Monad, Functor}
+import cats.syntax.functor._
+import cats.{Eq, Functor, Monad}
 
 trait TakeOne[Source[_]] {
   def take1[Element](src: Source[Element]): Source[(Element, Source[Element])]
@@ -11,9 +12,10 @@ trait TakeOne[Source[_]] {
   def take1Opt[Element](src: Source[Element]): Source[(Option[Element], Source[Element])]
 
   def peek1[Element](src: Source[Element])(
-      implicit Functor: Functor[Source]): Source[(Element, Source[Element])] = {
-    Functor.map(take1(src)) {
-      case (ele, _) => ele -> src
+      implicit Functor: Functor[Source],
+      cons: Cons[Source]): Source[(Element, Source[Element])] = {
+    take1(src).map {
+      case (ele, next) => ele -> cons.cons(next, ele)
     }
   }
 
@@ -22,12 +24,13 @@ trait TakeOne[Source[_]] {
 
   def isFollowedBy[Element](src: Source[Element])(expected: List[Element])(
       implicit EQ: Eq[Element],
-      monad: Monad[Source]): Source[(Boolean, Source[Element])] = {
+      monad: Monad[Source],
+      Cons: Cons[Source]): Source[(Boolean, Source[Element])] = {
     expected.headOption match {
       case Some(h) =>
         take1(src).flatMap {
           case (ele, next) if ele === h => isFollowedBy(next)(expected.tail)
-          case _                        => monad.pure(false -> src)
+          case (ele, next)              => monad.pure(false -> Cons.cons(next, ele))
         }
       case None => monad.pure(true -> src)
     }
@@ -49,7 +52,8 @@ trait TakeOne[Source[_]] {
 }
 
 trait TakeOneSyntax {
-  implicit def syntaxTakeOne[E, Src[_]](src: Src[E])(implicit t: TakeOne[Src]): TakeOps[E, Src] =
+  implicit def syntaxTakeOne[E, Src[_]](src: Src[E])(implicit t: TakeOne[Src],
+                                                     c: Cons[Src]): TakeOps[E, Src] =
     new TakeOps(src)
 }
 
@@ -73,8 +77,8 @@ object TakeOne extends TakeOneSyntax {
     }
 }
 
-final class TakeOps[Element, Source[_]](src: Source[Element])(
-    implicit take: TakeOne[Source]) {
+final class TakeOps[Element, Source[_]](src: Source[Element])(implicit take: TakeOne[Source],
+                                                              cons: Cons[Source]) {
 
   def take1: Source[(Element, Source[Element])]            = take.take1(src)
   def take1Opt: Source[(Option[Element], Source[Element])] = take.take1Opt(src)

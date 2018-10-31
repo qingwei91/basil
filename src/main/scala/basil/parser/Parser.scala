@@ -2,16 +2,14 @@ package basil.parser
 
 import cats.effect.IO
 import fs2._
-import matryoshka._
-import matryoshka.data.Fix
-import matryoshka.implicits._
 import org.json4s.JsonAST._
+import schemes.{Fix, Schemes}
 
 object Parser {
   type CharStream    = Stream[IO, Char]
   type Parse[Eff[_]] = Vector[PPath] => CharStream => Eff[(JValue, CharStream)]
 
-  type PerLevelParse = Algebra[ParseOps, Parse[IO]]
+  type PerLevelParse = ParseOps[Parse[IO]] => Parse[IO]
 
   implicit class StreamHelper(s: CharStream) {
 
@@ -364,7 +362,7 @@ object Parser {
   def parsing: PerLevelParse = {
     case GetString         => parseString
     case GetBool           => parseBoolean
-    case GetNum            => parseNumber(End)
+    case GetNum(e)         => parseNumber(e)
     case GetN(n, next)     => parseArrayItem(n, next)
     case GetKey(key, next) => parseObj(key, next)
     case GetNullable(ops) =>
@@ -374,9 +372,13 @@ object Parser {
         }
   }
 
-  def parse(exp: Fix[ParseOps], stream: CharStream)(implicit path: Vector[PPath]): IO[JValue] = {
-    val p: Parse[IO] = exp.cata(parsing)
-    p(path)(stream).map(_._1)
+  def oldParse(expr: Fix[ParseOps], src: Stream[IO, Char]): IO[(JValue, CharStream)] = {
+    Schemes.cata(expr)(parsing).apply(Vector.empty)(src)
+  }
+
+  def parseJS[Source[_], JV](expr: Fix[ParseOps], src: Source[Char])(
+      implicit parse: JsonParse[Source, JV]): Source[(JV, parse.CharSource)] = {
+    Schemes.cata(expr)(parse.parsing).apply(Vector.empty)(src)
   }
 }
 
