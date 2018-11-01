@@ -82,7 +82,7 @@ class ParserSpec
 
       decoded.unsafeRunSync()._1 mustBe a[JString]
     }
-    "parse object" ignore {
+    "parse object" in {
       forAll(jsObjGen("myKey", jsArrGen(2, jstrGen))) { obj =>
         val jsonStr = compact(render(obj)).toCharArray
 
@@ -133,11 +133,9 @@ class ParserSpec
         ))
 
       val str      = compact(render(obj)).toCharArray
-      val decoded1 = Parser.oldParse(ops.t, Stream(str: _*)).map(_._1)
-      val _        = parseJSStream(ops.t, Stream(str: _*))
+      val decoded1 = parseJSStream(ops.t, Stream(str: _*))
 
       decoded1.unsafeRunSync() mustBe a[JBool]
-//      decoded2.unsafeRunSync() mustBe a[JBool]
     }
 
     "work" in {
@@ -154,24 +152,58 @@ class ParserSpec
 }
 
 trait ParserGen {
-  def endingOpGen: Gen[ParseOps[Nothing]] = Gen.oneOf(GetString, GetNum(End), GetBool)
+  private def endingOpGen: Gen[ExpectedTerminator => ParseOps[Nothing]] = {
+    val s: ExpectedTerminator => ParseOps[Nothing] = _ => GetString
+    val n: ExpectedTerminator => ParseOps[Nothing] = x => GetNum(x)
+    val b: ExpectedTerminator => ParseOps[Nothing] = _ => GetBool
 
-  def nonEndingOpGen(gen: Gen[ParseOps[Fix[ParseOps]]]): Gen[ParseOps[Fix[ParseOps]]] = {
+    Gen.oneOf(s, n, b)
+  }
+
+  type TransformOps = ParseOps[Fix[ParseOps]] => ParseOps[Fix[ParseOps]]
+
+  private def nonEndingOpGen(gen: Gen[ExpectedTerminator => ParseOps[Fix[ParseOps]]])
+    : Gen[ExpectedTerminator => ParseOps[Fix[ParseOps]]] = {
+
+    val nullableG: Gen[TransformOps] = {
+      Gen
+        .frequency(
+          1 -> Gen.const(true),
+          9 -> Gen.const(false)
+        )
+        .map { isNull =>
+          if (isNull) { ops =>
+            GetNullable(Fix(ops))
+          } else { ops =>
+            ops
+          }
+        }
+    }
     for {
-      a   <- gen
-      n   <- Gen.choose(0, 15)
-      key <- Gen.alphaStr.filter(_.nonEmpty)
-      op  <- Gen.oneOf(GetNullable(Fix(a)), GetN(n, Fix(a)), GetKey(key, Fix(a)))
-    } yield {
-      op
+      endingOp <- gen
+      n        <- Gen.choose(0, 15)
+      key      <- Gen.alphaStr.filter(_.nonEmpty)
+      nullable <- nullableG
+      op <- Gen.oneOf(GetN(n, Fix(endingOp(OneOf(Bracket, Comma)))),
+                      GetKey(key, Fix(endingOp(OneOf(Comma, CurlyBrace)))))
+    } yield { _: ExpectedTerminator =>
+      nullable(op)
     }
   }
 
   def opsGen(depth: Int): Gen[ParseOps[Fix[ParseOps]]] = {
-    depth match {
-      case 0 => endingOpGen
-      case n => nonEndingOpGen(opsGen(n - 1))
+    def recurse(depth: Int): Gen[ExpectedTerminator => ParseOps[Fix[ParseOps]]] = {
+      depth match {
+        case 0 => endingOpGen
+        case n => nonEndingOpGen(recurse(n - 1))
+      }
     }
+    if (depth == 0) {
+      endingOpGen.map(f => f(End))
+    } else {
+      recurse(depth).map(f => f(End))
+    }
+
   }
 
   def opsJsGen(depth: Int): Gen[(ParseOps[Fix[ParseOps]], JValue)] = {
