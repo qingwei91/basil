@@ -20,3 +20,7 @@ object ExpectedTerminator {
     }
   }
 }
+
+object OneOf {
+  def apply(t: ExpectedTerminator*): OneOf = OneOf(List(t: _*))
+}

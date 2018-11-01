@@ -9,11 +9,11 @@ trait ParseOpsConstructor {
         Fix(GetKey(key, next))
       }
 
-      Continuable(cont.andThen(c.cont))
+      Continuable(cont.andThen(c.cont), OneOf(Comma, CurlyBrace))
 
     }
     def getNum: ExprEnd[ParseOps] = {
-      ExprEnd(c.cont(Fix[ParseOps](GetNum(End))))
+      ExprEnd(c.cont(Fix[ParseOps](GetNum(c.terminator))))
     }
 
     def getN(n: Int): Continuable[ParseOps] = {
@@ -21,7 +21,7 @@ trait ParseOpsConstructor {
         Fix(GetN(n, next))
       }
 
-      Continuable(cont.andThen(c.cont))
+      Continuable(cont.andThen(c.cont), OneOf(Comma, Bracket))
     }
 
     def getString: ExprEnd[ParseOps] = ExprEnd(c.cont(Fix[ParseOps](GetString)))
@@ -33,15 +33,16 @@ trait ParseOpsConstructor {
         Fix(GetNullable(next))
       }
 
-      Continuable(cont.andThen(c.cont))
+      Continuable(cont.andThen(c.cont), c.terminator)
     }
   }
 
-  val Start: Continuable[ParseOps] = Continuable[ParseOps](identity)
+  val Start: Continuable[ParseOps] = Continuable[ParseOps](identity, End)
 }
 
 sealed trait ExprTree[A[_]]
-case class Continuable[A[_]](cont: Fix[A] => Fix[A]) extends ExprTree[A]
-case class ExprEnd[A[_]](t: Fix[A])                  extends ExprTree[A]
+case class Continuable[A[_]](cont: Fix[A] => Fix[A], terminator: ExpectedTerminator)
+    extends ExprTree[A]
+case class ExprEnd[A[_]](t: Fix[A]) extends ExprTree[A]
 
 object ParseOpsConstructor extends ParseOpsConstructor
