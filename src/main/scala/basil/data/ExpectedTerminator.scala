@@ -1,4 +1,4 @@
-package basil.parser
+package basil.data
 
 sealed trait ExpectedTerminator
 case object Comma                             extends ExpectedTerminator

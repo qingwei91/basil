@@ -1,6 +1,6 @@
 package basil.typeclass
 
-import basil.parser.ParseFailure
+import basil.data.ParseFailure
 import cats.effect.IO
 import cats.kernel.Monoid
 import cats.{Monad, MonadError}

@@ -1,9 +1,9 @@
-package basil.parser
+package basil.data
 
-import matryoshka.data.Fix
-import cats.{Applicative, Eval, Show, Traverse}
 import cats.data.Const
 import cats.syntax.functor._
+import cats.{Applicative, Eval, Show, Traverse}
+import schemes._
 
 sealed trait ParseOps[+A]
 
@@ -58,18 +58,18 @@ object ParseOps {
     case GetBool   => GetBool.toString
     case GetNullable(a) =>
       s"""GetNullable {
-        |  ${showRecursiveOps.show(a.unFix)}
+        |  ${showRecursiveOps.show(a.unfix)}
         |}""".stripMargin
     case GetN(n, a) =>
       s"""
          |GetN($n) {
-         |  ${showRecursiveOps.show(a.unFix)}
+         |  ${showRecursiveOps.show(a.unfix)}
          |}
        """.stripMargin
     case GetKey(k, a) =>
       s"""
          |GetKey($k) {
-         |  ${showRecursiveOps.show(a.unFix)}
+         |  ${showRecursiveOps.show(a.unfix)}
          |}
        """.stripMargin
   }

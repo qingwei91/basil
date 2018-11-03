@@ -1,5 +1,6 @@
 package basil.parser
 
+import basil.data._
 import basil.typeclass.{Cons, JsRepr, TakeOne}
 import basil.typeclass.TakeOne._
 import cats.MonadError

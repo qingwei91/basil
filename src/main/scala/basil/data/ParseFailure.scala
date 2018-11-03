@@ -1,4 +1,4 @@
-package basil.parser
+package basil.data
 
 import cats.syntax.show._
 

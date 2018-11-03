@@ -1,5 +1,6 @@
 package basil.parser
 
+import basil.data._
 import cats.Functor
 import cats.syntax.functor._
 import org.json4s._
