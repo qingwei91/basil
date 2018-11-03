@@ -7,7 +7,6 @@ scalaVersion := "2.12.6"
 libraryDependencies ++= Seq(
   "org.typelevel"             %% "cats-core"     % "1.3.1",
   "org.typelevel"             %% "cats-effect"   % "1.0.0",
-  "com.lihaoyi"               %% "sourcecode"    % "0.1.4",
   "co.fs2"                    %% "fs2-core"      % "1.0.0",
   "org.json4s"                %% "json4s-native" % "3.5.4",
   "io.github.davidgregory084" %% "schemes-core"  % "0.1.0",
