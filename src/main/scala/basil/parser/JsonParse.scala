@@ -1,6 +1,6 @@
 package basil.parser
 
-import basil.typeclass.{Cons, TakeOne}
+import basil.typeclass.{Cons, JsRepr, TakeOne}
 import basil.typeclass.TakeOne._
 import cats.MonadError
 import cats.instances.char._
@@ -12,20 +12,12 @@ import cats.syntax.functor._
 abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
                                           ME: MonadError[Source, ParseFailure],
                                           Monoid: Monoid[Source[Char]],
-                                          Cons: Cons[Source]) {
+                                          Cons: Cons[Source],
+                                          jsReps: JsRepr[JVal]) {
 
   type CharSource = Source[Char]
-  type Str <: JVal
-  type Num <: JVal
-  type Bool <: JVal
-  type Arr <: JVal
-  type Obj <: JVal
-  type Null <: JVal
 
-  def str(s: String): Str
-  def bool(boolean: Boolean): Bool
-  def num(d: Double): Num
-  def Null: Null
+  import jsReps._
 
   type Parse = Vector[PPath] => CharSource => Source[(JVal, CharSource)]
 

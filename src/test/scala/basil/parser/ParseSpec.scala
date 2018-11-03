@@ -1,59 +1,61 @@
 package basil.parser
 
-import fs2.Stream
-import schemes._
+import cats.Functor
+import cats.syntax.functor._
 import org.json4s._
-import org.json4s.native.JsonMethods._
-import org.scalacheck._
-import org.scalatest._
+import org.json4s.native.JsonMethods.{compact, render}
+import org.scalacheck.Gen
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
-import cats.effect.IO
+import org.scalatest.{MustMatchers, WordSpec}
+import schemes.Fix
+import schemes._
 
-import scala.concurrent.Await
-import scala.concurrent.duration._
-
-class ParserSpec
+abstract class ParseSpec[F[_]: Functor]
     extends WordSpec
     with MustMatchers
     with GeneratorDrivenPropertyChecks
     with ParseOpsConstructor
     with ParserGen {
 
-  "new parser" should {
-    "parse string" in new Context {
-      import jsonParse._
+  implicit val parser: JsonParse[F, JValue]
+  def liftF(charArr: Array[Char]): F[Char]
+  def getLast[A](f: F[A]): A
+
+  private implicit class FOps[A](f: F[(JValue, A)]) {
+    def getJVal: JValue = getLast(f.map(_._1))
+  }
+
+  "stream parser" should {
+    "parse string" in new PContext[F] {
+      import parser._
       forAll(jstrGen) { js =>
         val jsonStr = compact(render(js)).toCharArray
+        val decoded = parseString(path)(liftF(jsonStr)).getJVal
 
-        val decoded =
-          parseString(path)(Stream.apply(jsonStr: _*)).compile.lastOrError
-
-        decoded.get._1 mustBe js
+        decoded mustBe js
       }
     }
 
-    "parse boolean" in new Context {
-      import jsonParse._
+    "parse boolean" in new PContext[F] {
+      import parser._
       List(JBool.True, JBool.False).foreach { js =>
         val jsonStr = compact(render(js)).toCharArray
+        val decoded = parseBoolean(path)(liftF(jsonStr)).getJVal
 
-        val decoded = parseBoolean(path)(Stream.apply(jsonStr: _*)).compile.lastOrError
-
-        decoded.get._1 mustBe js
+        decoded mustBe js
       }
     }
-    "parse number" in new Context {
-      import jsonParse._
+    "parse number" in new PContext[F] {
+      import parser._
       forAll(jnumGen) { num =>
         val jsonStr = compact(render(num)).toCharArray
-        val decoded =
-          parseNumber(End)(path)(Stream.apply(jsonStr: _*)).compile.lastOrError
-        decoded.get._1 mustBe num
+        val decoded = parseNumber(End)(path)(liftF(jsonStr)).getJVal
+        decoded mustBe num
       }
     }
 
-    "parse array" in new Context {
-      import jsonParse._
+    "parse array" in new PContext[F] {
+      import parser._
       forAll(jsArrGen(12, Gen.oneOf(jstrGen, jstrGen))) { js =>
         val js = JArray(List.fill(12)(JString("")))
         val i  = (js.arr.size / 2)
@@ -61,31 +63,31 @@ class ParserSpec
         val jsonStr = compact(render(js)).toCharArray
 
         val decoded =
-          parseArrayItem(i, jsonParse.parseString)(path)(Stream(jsonStr: _*)).head.compile.lastOrError
+          parseArrayItem(i, parser.parseString)(path)(liftF(jsonStr)).getJVal
 
-        decoded.get._1 mustBe a[JString]
+        decoded mustBe a[JString]
       }
     }
-    "parse array specific" in new Context {
-      import jsonParse._
+    "parse array specific" in new PContext[F] {
+      import parser._
       val jsonStr = compact(render(JArray(List(JString(""))))).toCharArray
 
       val decoded =
-        parseArrayItem(0, parseString)(path)(Stream(jsonStr: _*)).head.compile.lastOrError
+        parseArrayItem(0, parseString)(path)(liftF(jsonStr)).getJVal
 
-      decoded.get._1 mustBe a[JString]
+      decoded mustBe a[JString]
     }
-    "parse object" in new Context {
+    "parse object" in new PContext[F] {
       forAll(jsObjGen("myKey", jsArrGen(2, jstrGen))) { obj =>
         val jsonStr = compact(render(obj)).toCharArray
 
         val ops     = Start.getKey("myKey").getN(1).getString.t
-        val decoded = parseJSStream(ops, Stream(jsonStr: _*))
-        decoded.get mustBe a[JString]
+        val decoded = parseJSStream(ops, liftF(jsonStr)).getJVal
+        decoded mustBe a[JString]
       }
     }
 
-    "testbed" in new Context {
+    "testbed" in new PContext[F] {
       val ops = Start
         .getN(1)
         .getKey("mfxteosecEmnzqdfGftarkgojYpxkd")
@@ -125,35 +127,29 @@ class ParserSpec
         ))
 
       val str      = compact(render(obj)).toCharArray
-      val decoded1 = parseJSStream(ops.t, Stream(str: _*))
+      val decoded1 = parseJSStream(ops.t, liftF(str)).getJVal
 
-      decoded1.get mustBe a[JBool]
+      decoded1 mustBe a[JBool]
     }
 
-    "work" in new Context {
+    "work" in new PContext[F] {
       forAll(opsJsGen(5)) {
         case (ops, js) =>
           val jsStr = compact(render(js)).toCharArray
 
-          val decoded = parseJSStream(Fix(ops), Stream(jsStr: _*))
+          val decoded = parseJSStream(Fix(ops), liftF(jsStr)).getJVal
 
-          decoded.get mustBe a[JValue]
+          decoded mustBe a[JValue]
       }
     }
   }
 }
 
-trait Context {
-  implicit val path: Vector[PPath]                         = Vector.empty
-  implicit val jsonParse: JsonParse[Stream[IO, ?], JValue] = StreamJsonParser
-  def parseJSStream(ops: Fix[ParseOps], s: Stream[IO, Char]): IO[JValue] =
-    Parser.parseJS[Stream[IO, ?], JValue](ops, s)(jsonParse).head.compile.last.map {
-      case Some((js, _)) => js
-      case None          => throw ParseFailure.termination
-    }
-  implicit class Ops[A](private val io: IO[A]) {
-    def get(): A = Await.result(io.unsafeToFuture(), 2.seconds)
-  }
+private abstract class PContext[F[_]](implicit val parser: JsonParse[F, JValue]) {
+  implicit val path: Vector[PPath] = Vector.empty
+
+  def parseJSStream(ops: Fix[ParseOps], s: F[Char]): F[(JValue, F[Char])] =
+    Parser.parseJS[F, JValue](ops, s)(parser)
 }
 
 trait ParserGen {
@@ -186,7 +182,7 @@ trait ParserGen {
     }
     for {
       endingOp <- gen
-      n        <- Gen.choose(0, 15)
+      n        <- Gen.choose(0, 5)
       key      <- Gen.alphaStr.filter(_.nonEmpty)
       nullable <- nullableG
       op <- Gen.oneOf(GetN(n, Fix(endingOp(OneOf(Bracket, Comma)))),
@@ -231,7 +227,7 @@ trait ParserGen {
 
   // todo: handle escape char, omg
   val jstrGen = for {
-    s <- Gen.alphaStr
+    s <- Gen.alphaStr.suchThat(_.length < 200)
   } yield {
     JString(s)
   }
@@ -239,7 +235,7 @@ trait ParserGen {
   val jnumGen = for {
     n <- Gen.choose(Double.MinValue, Double.MaxValue)
   } yield {
-    JDouble(n / 2)
+    JDouble(n)
   }
 
   def jsObjGen(key: String, gen: Gen[JValue]): Gen[JObject] = {
