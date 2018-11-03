@@ -118,7 +118,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  def parseString: Parse = { implicit path => src =>
+  val parseString: Parse = { implicit path => src =>
     src.take1
       .flatMap {
         case ('"', next) => next.accUntil(_ == '"')
@@ -130,7 +130,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
         case (acc, next) => str(acc.mkString) -> next
       }
   }
-  def parseBoolean: Parse = { implicit path => src =>
+  val parseBoolean: Parse = { implicit path => src =>
     src.isFollowedBy("true".toCharArray.toList).flatMap {
       case (isTrue, next) =>
         if (isTrue) {
@@ -291,7 +291,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
 
   }
 
-  def parsing: ParseOps[Parse] => Parse = {
+  val parsing: ParseOps[Parse] => Parse = {
     case GetString         => parseString
     case GetBool           => parseBoolean
     case GetNum(t)         => parseNumber(t)

@@ -36,7 +36,6 @@ abstract class ParseSpec[F[_]: Functor]
         decoded mustBe js
       }
     }
-
     "parse boolean" in new PContext[F] {
       import parser._
       List(JBool.True, JBool.False).foreach { js =>
@@ -54,93 +53,37 @@ abstract class ParseSpec[F[_]: Functor]
         decoded mustBe num
       }
     }
-
     "parse array" in new PContext[F] {
       import parser._
-      forAll(jsArrGen(12, Gen.oneOf(jstrGen, jstrGen))) { js =>
-        val js = JArray(List.fill(12)(JString("")))
-        val i  = (js.arr.size / 2)
+      val i = 12
+      forAll(jsArrGen(i, jstrGen.branch)) {
+        case (js, expected) =>
+          val jsonStr = compact(render(js)).toCharArray
 
-        val jsonStr = compact(render(js)).toCharArray
+          val decoded =
+            parseArrayItem(i, parser.parseString)(path)(liftF(jsonStr)).getJVal
 
-        val decoded =
-          parseArrayItem(i, parser.parseString)(path)(liftF(jsonStr)).getJVal
-
-        decoded mustBe a[JString]
+          decoded mustBe expected
       }
-    }
-    "parse array specific" in new PContext[F] {
-      import parser._
-      val jsonStr = compact(render(JArray(List(JString(""))))).toCharArray
-
-      val decoded =
-        parseArrayItem(0, parseString)(path)(liftF(jsonStr)).getJVal
-
-      decoded mustBe a[JString]
     }
     "parse object" in new PContext[F] {
-      forAll(jsObjGen("myKey", jsArrGen(2, jstrGen))) { obj =>
-        val jsonStr = compact(render(obj)).toCharArray
+      forAll(jsObjGen("myKey", jsArrGen(2, jstrGen.branch))) {
+        case (obj, expected) =>
+          val jsonStr = compact(render(obj)).toCharArray
 
-        val ops     = Start.getKey("myKey").getN(1).getString.t
-        val decoded = parseJSStream(ops, liftF(jsonStr)).getJVal
-        decoded mustBe a[JString]
+          val ops     = Start.getKey("myKey").getN(2).getString.t
+          val decoded = parseJSStream(ops, liftF(jsonStr)).getJVal
+          decoded mustBe expected
       }
     }
-
-    "testbed" in new PContext[F] {
-      val ops = Start
-        .getN(1)
-        .getKey("mfxteosecEmnzqdfGftarkgojYpxkd")
-        .getN(9)
-        .getBool
-
-      val obj = JArray(
-        List(
-          JObject(
-            List(
-              ("mfxteosecEmnzqdfGftarkgojYpxkd",
-               JArray(
-                 List(JBool(false),
-                      JBool(false),
-                      JBool(false),
-                      JBool(false),
-                      JBool(true),
-                      JBool(false),
-                      JBool(true),
-                      JBool(false),
-                      JBool(true),
-                      JBool(true)))))),
-          JObject(
-            List(
-              ("mfxteosecEmnzqdfGftarkgojYpxkd",
-               JArray(
-                 List(JBool(false),
-                      JBool(false),
-                      JBool(false),
-                      JBool(false),
-                      JBool(false),
-                      JBool(false),
-                      JBool(false),
-                      JBool(true),
-                      JBool(true),
-                      JBool(true))))))
-        ))
-
-      val str      = compact(render(obj)).toCharArray
-      val decoded1 = parseJSStream(ops.t, liftF(str)).getJVal
-
-      decoded1 mustBe a[JBool]
-    }
-
-    "work" in new PContext[F] {
+    "parse random JS" in new PContext[F] {
       forAll(opsJsGen(5)) {
-        case (ops, js) =>
+        case (ops, js, extracted) =>
           val jsStr = compact(render(js)).toCharArray
 
           val decoded = parseJSStream(Fix(ops), liftF(jsStr)).getJVal
 
-          decoded mustBe a[JValue]
+          decoded mustBe extracted
       }
     }
   }
@@ -160,6 +103,10 @@ trait ParserGen {
     val b: ExpectedTerminator => ParseOps[Nothing] = _ => GetBool
 
     Gen.oneOf(s, n, b)
+  }
+
+  implicit class GenOps[A](gen: Gen[A]) {
+    def branch: Gen[(A, A)] = gen.map(s => s -> s)
   }
 
   type TransformOps = ParseOps[Fix[ParseOps]] => ParseOps[Fix[ParseOps]]
@@ -208,56 +155,102 @@ trait ParserGen {
 
   }
 
-  def opsJsGen(depth: Int): Gen[(ParseOps[Fix[ParseOps]], JValue)] = {
+  def opsJsGen(depth: Int): Gen[(ParseOps[Fix[ParseOps]], JValue, JValue)] = {
     for {
-      ops    <- opsGen(depth)
-      jValue <- jsGen(ops)
-    } yield ops -> jValue
+      ops                 <- opsGen(depth)
+      (jValue, extracted) <- jsGen(ops)
+    } yield (ops, jValue, extracted)
   }
 
-  def jsGen(op: ParseOps[Fix[ParseOps]]): Gen[JValue] = {
+  /**
+    *
+    * @param op
+    * @return Generate a pair of JsValue,
+    *         _._1 is the nested JsValue
+    *         _._2 is the drilldown value that should be extracted by our parsing
+    */
+  def jsGen(op: ParseOps[Fix[ParseOps]]): Gen[(JValue, JValue)] = {
     op match {
-      case GetString         => jstrGen
-      case GetNum(_)         => jnumGen
-      case GetBool           => Gen.oneOf(JBool.False, JBool.True)
-      case GetNullable(ops)  => Gen.some(jsGen(ops.unfix)).map(_.fold[JValue](JNull)(identity))
-      case GetN(n, next)     => jsArrGen(n + 1, jsGen(next.unfix))
+      case GetString         => jstrGen.branch
+      case GetNum(_)         => jnumGen.branch
+      case GetBool           => Gen.oneOf(JBool.False, JBool.True).branch
+      case GetN(n, next)     => jsArrGen(n, jsGen(next.unfix))
       case GetKey(key, next) => jsObjGen(key, jsGen(next.unfix))
+      case GetNullable(ops) =>
+        jsGen(ops.unfix).flatMap {
+          case (nested, deepdown) =>
+            Gen
+              .some(Gen.const(nested))
+              .map(_.fold[JValue](JNull)(identity))
+              .map(_ -> deepdown)
+        }
     }
   }
 
   // todo: handle escape char, omg
-  val jstrGen = for {
-    s <- Gen.alphaStr.suchThat(_.length < 200)
-  } yield {
-    JString(s)
-  }
-
-  val jnumGen = for {
-    n <- Gen.choose(Double.MinValue, Double.MaxValue)
-  } yield {
-    JDouble(n)
-  }
-
-  def jsObjGen(key: String, gen: Gen[JValue]): Gen[JObject] = {
+  val jstrGen =
     for {
-      v <- gen
+      s <- Gen.alphaStr.suchThat(_.length < 200)
     } yield {
-      JObject(key -> v)
+      JString(s)
+    }
+
+  val jnumGen =
+    for {
+      n <- Gen.choose(Double.MinValue, Double.MaxValue)
+    } yield {
+      JDouble(n)
+    }
+
+  val jBoolGen = for {
+    b <- Gen.oneOf(true, false)
+  } yield JBool(b)
+
+  def jsObjGen(key: String, gen: Gen[(JValue, JValue)]): Gen[(JObject, JValue)] = {
+    for {
+      n                   <- Gen.choose(2, 8)
+      obj                 <- randomObj(n)
+      (nested, drillDown) <- gen
+    } yield {
+      val merged = (key -> nested) :: obj.obj
+
+      JObject(merged) -> drillDown
     }
   }
 
-  val jsonGen = for {
-    x <- Gen.oneOf(jstrGen, jnumGen)
-  } yield {
-    x
+  def randomPair = {
+    for {
+      key   <- Gen.alphaNumStr.suchThat(s => s.length < 100)
+      value <- randomJsGen
+    } yield {
+      key -> value
+    }
   }
 
-  def jsArrGen(size: Int, gen: Gen[JValue]) = {
+  def randomObj(n: Int) = {
+    Gen.listOfN(n, randomPair).map { kvs =>
+      JObject(kvs)
+    }
+  }
+
+  def randomJsGen: Gen[JValue] = {
+
+    Gen.frequency(
+      6 -> jstrGen,
+      6 -> jnumGen,
+      6 -> jBoolGen,
+      1 -> Gen.listOfN(5, Gen.lzy(randomJsGen)).map(ls => JArray(ls)),
+      1 -> Gen.choose[Int](2, 12).flatMap(randomObj)
+    )
+  }
+
+  def jsArrGen(n: Int, gen: Gen[(JValue, JValue)]) = {
     for {
-      js <- Gen.listOfN(size, gen)
+      list               <- Gen.listOfN(n + 1, randomJsGen)
+      (target, finalVal) <- gen
     } yield {
-      JArray(js)
+      val (a, b) = list.splitAt(n)
+      JArray(a ::: (target :: b)) -> finalVal
     }
   }
 }
