@@ -4,6 +4,7 @@ import basil.data._
 import cats.Functor
 import cats.syntax.functor._
 import org.json4s._
+import org.json4s.JsonDSL._
 import org.json4s.native.JsonMethods.{compact, render}
 import org.scalacheck.Gen
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
@@ -85,6 +86,28 @@ abstract class ParseSpec[F[_]: Functor]
 
           decoded mustBe extracted
       }
+    }
+    "parse partial array" in new PContext[F] {
+      val arr: JArray  = List(2, 3, 10, 20, 31)
+      val partialJsStr = compact(render(arr)).toCharArray.dropRight(6)
+      val ops          = Start.getN(2).getNum.t
+
+      val decoded = parseJSStream(ops, liftF(partialJsStr)).getJVal
+
+      decoded mustBe JDouble(10)
+    }
+    "parse partial obj" in new PContext[F] {
+      val obj = (
+        ("keyA"        -> "") ~
+          (""          -> ("oh my" -> 20) ~ ("really?" -> "nope")) ~
+          ("{wontwork" -> List(true, false))
+      )
+
+      val partialJsStr = compact(render(obj)).toCharArray.dropRight(16)
+      val ops          = Start.getKey("").getKey("really?").getString.t
+
+      val decoded = parseJSStream(ops, liftF(partialJsStr)).getJVal
+      decoded mustBe JString("nope")
     }
   }
 }
