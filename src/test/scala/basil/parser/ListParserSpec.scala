@@ -6,8 +6,8 @@ import org.json4s.JValue
 
 import scala.util.Success
 
-class ArrayParserSpec extends ParseSpec[TryList] {
-  override implicit val parser: JsonParse[TryList, JValue] = ListJsonParser
+class ListParserSpec extends ParseSpec[TryList] {
+  override implicit val parser: JsonParse[TryList, JValue] = implicits.ListJsonParser
 
   override def liftF(charArr: Array[Char]): TryList[Char] = Success(List(charArr: _*))
 

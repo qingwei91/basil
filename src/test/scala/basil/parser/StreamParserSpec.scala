@@ -5,7 +5,7 @@ import fs2.Stream
 import org.json4s._
 
 class StreamParserSpec extends ParseSpec[Stream[IO, ?]] {
-  override implicit val parser: JsonParse[Stream[IO, ?], JValue] = StreamJsonParser
+  override implicit val parser: JsonParse[Stream[IO, ?], JValue] = implicits.StreamJsonParser
 
   override def liftF(charArr: Array[Char]): Stream[IO, Char] = Stream(charArr: _*)
 
