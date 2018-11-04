@@ -2,6 +2,10 @@
 
 A json `Decoder` that can extract data from partial, incomplete json.
 
+Right now it supports parsing json from `fs2.Stream[IO, Char]` and `List[Char]`
+
+Support of `Array[Char]` (which is likely the most common usecase) is planned, but not implemented yet.
+
 **Warning**: This library is likely buggy and not completely comply to JSON specification as of now
 
 ### Example
