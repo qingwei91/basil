@@ -96,14 +96,15 @@ abstract class ParseSpec[F[_]: Functor]
 
       decoded mustBe JDouble(10)
     }
+
     "parse partial obj" in new PContext[F] {
       val obj = (
-        ("keyA"        -> "") ~
+        ("keyA"        -> "aa") ~
           (""          -> ("oh my" -> 20) ~ ("really?" -> "nope")) ~
           ("{wontwork" -> List(true, false))
       )
 
-      val partialJsStr = compact(render(obj)).toCharArray.dropRight(16)
+      val partialJsStr = compact(render(obj)).toCharArray.dropRight(15)
       val ops          = Start.getKey("").getKey("really?").getString.t
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getJVal
@@ -243,7 +244,7 @@ trait ParserGen {
 
   def randomPair = {
     for {
-      key   <- Gen.alphaNumStr.suchThat(s => s.length < 100)
+      key   <- Gen.alphaNumStr.suchThat(s => s.length < 200)
       value <- randomJsGen
     } yield {
       key -> value

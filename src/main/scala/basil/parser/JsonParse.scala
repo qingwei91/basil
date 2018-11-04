@@ -88,7 +88,8 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
           case (key, afterKey) =>
             afterKey.take1.flatMap {
               case (':', next) => ME.pure(key.mkString -> next)
-              case (o, _)      => ME.raiseError(ParseFailure(": for key finding", o.toString, path))
+              case (o, _) =>
+                ME.raiseError(ParseFailure(s": for key ${key.mkString} finding", o.toString, path))
             }
         }
 
@@ -274,18 +275,16 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     def skipUntilKey(implicit path: Vector[PPath]): Pipe = { s =>
       parseObjKey(s).take1.flatMap[Char] {
         case ((key, nextS), _) if key == k => nextS
-        case ((_, nextS), _)               => skipUntilKey(path)(nextS)
+        case ((_, nextS), _) =>
+          val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(nextS).drop1
+          skipUntilKey(path)(skippedOne)
       }
     }
 
-    if (k.isEmpty) {
-      ME.raiseError(ParseFailure("Key not found", "", path \ k))
-    } else {
-      nextOp(path \ k) {
-        stream.take1.flatMap {
-          case ('{', next) => skipUntilKey(path \ k)(next)
-          case (c, _)      => ME.raiseError(ParseFailure("{", c.toString, path))
-        }
+    nextOp(path \ k) {
+      stream.take1.flatMap {
+        case ('{', next) => skipUntilKey(path \ k)(next)
+        case (c, _)      => ME.raiseError(ParseFailure("{", c.toString, path))
       }
     }
 
