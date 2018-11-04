@@ -1,5 +1,7 @@
 ## Basil
 
+![Build](https://travis-ci.org/buaya91/basil.svg?branch=master)
+
 A json `Decoder` that can extract data from partial, incomplete json.
 
 Right now it supports parsing json from `fs2.Stream[IO, Char]` and `List[Char]`
