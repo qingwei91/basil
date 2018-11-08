@@ -41,19 +41,6 @@ trait TakeOne[Source[_]] {
     }
 
   }
-
-  def accUntil[Element](stream: Source[Element])(until: Element => Boolean)(
-      implicit monad: Monad[Source]): Source[(Vector[Element], Source[Element])] = {
-    def recurse(stream: Source[Element])(
-        acc: Vector[Element]): Source[(Vector[Element], Source[Element])] = {
-      take1(stream).flatMap {
-        case (ele, next) if until(ele) => monad.pure(acc -> next)
-        case (ele, next)               => recurse(next)(acc :+ ele)
-      }
-    }
-
-    recurse(stream)(Vector.empty)
-  }
 }
 
 trait TakeOneSyntax {
@@ -169,10 +156,6 @@ final class TakeOps[Element, Source[_]](src: Source[Element])(implicit take: Tak
   def take1Opt: Source[(Option[Element], Source[Element])] = take.take1Opt(src)
 
   def peek1(implicit Functor: Functor[Source]): Source[(Element, Source[Element])] = take.peek1(src)
-
-  def accUntil(until: Element => Boolean)(
-      implicit monad: Monad[Source]): Source[(Vector[Element], Source[Element])] =
-    take.accUntil(src)(until)
 
   def isFollowedBy(expected: List[Element])(
       implicit EQ: Eq[Element],

@@ -24,22 +24,131 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
 
   type Pipe = CharSource => CharSource
 
+  val parseString: Parse = { implicit path => src =>
+    src.take1
+      .flatMap {
+        case ('"', next) => accJsString(next)
+        case (other, _) =>
+          ME.raiseError[(Vector[Char], Source[Char])](
+            ParseFailure(s"""String should starts with ", but found $other""", path))
+      }
+      .map {
+        case (acc, next) => str(acc.mkString) -> next
+      }
+  }
+  val parseBoolean: Parse = { implicit path => src =>
+    src.isFollowedBy("true".toCharArray.toList).flatMap {
+      case (isTrue, next) =>
+        if (isTrue) {
+          ME.pure(bool(true) -> next)
+        } else {
+          src.isFollowedBy("false".toCharArray.toList).flatMap {
+            case (isFalse, next) =>
+              if (isFalse) {
+                ME.pure(bool(false) -> next)
+              } else {
+                ME.raiseError(ParseFailure("Expecting either `true` or `false`", path))
+              }
+          }
+        }
+    }
+  }
+  def parseNumber(terminator: ExpectedTerminator): Parse = { implicit path => s =>
+    parseNum1(s)(terminator)
+      .flatMap {
+        case Part1(p1, Some(sep1), next) =>
+          parseNum2(next, sep1)(terminator).flatMap {
+            case Part2(p2, Some(sep2), next) =>
+              parseNum3(next)(terminator).flatMap {
+                case (p3, next) =>
+                  val full = (p1 :+ sep1) ++ (p2 :+ sep2) ++ p3
+                  ME.pure(full -> next)
+              }
+            case Part2(p2, None, next) =>
+              val full = (p1 :+ sep1) ++ p2
+              ME.pure(full -> next)
+          }
+        case Part1(p1, None, next) => ME.pure(p1 -> next)
+      }
+      .map {
+        case (numChars, next) => num(numChars.mkString.toDouble) -> next
+      }
+  }
+  def parseArrayItem(n: Int, next: Parse): Parse = { implicit path => s =>
+    def recurse(left: Int): Parse = { implicit path => stream =>
+      if (left == 0) {
+        next(path)(stream)
+      } else {
+        val skip1        = skipOne(Comma)(path)(stream)
+        val skippedComma = skipComma(path)(skip1)
+        val end          = recurse(left - 1)(path)(skippedComma)
+        end
+      }
+    }
+
+    s.take1.flatMap {
+      case ('[', next) => recurse(n)(path \ n)(next)
+      case (u, _)      => ME.raiseError(ParseFailure("[", u.toString, path \ n))
+    }
+  }
+  def parseObj(k: String, nextOp: Parse): Parse = { implicit path => stream =>
+    def skipUntilKey(implicit path: Vector[PPath]): Pipe = { s =>
+      parseObjKey(s).take1.flatMap[Char] {
+        case ((key, nextS), _) if key == k => nextS
+        case ((_, nextS), _) =>
+          val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(nextS).drop1
+          skipUntilKey(path)(skippedOne)
+      }
+    }
+
+    nextOp(path \ k) {
+      stream.take1.flatMap {
+        case ('{', next) => skipUntilKey(path \ k)(next)
+        case (c, _)      => ME.raiseError(ParseFailure("{", c.toString, path))
+      }
+    }
+
+  }
+
+  // todo: handle unicode ??? (maybe just dont support it)
+  private def accJsString(i: Source[Char])(
+      implicit path: Vector[PPath]): Source[(Vector[Char], Source[Char])] = {
+    def recurse(s: Source[Char])(acc: Vector[Char]): Source[(Vector[Char], Source[Char])] = {
+      val wasEscaped = acc.lastOption.contains('\\')
+
+      s.take1.flatMap {
+        case ('"', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '"')
+        case ('\\', next) if wasEscaped => recurse(next)(acc.dropRight(1) :+ '\\')
+        case ('/', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '/')
+        case ('b', next) if wasEscaped  => recurse(next)(acc :+ 'b')
+        case ('f', next) if wasEscaped  => recurse(next)(acc :+ 'f')
+        case ('n', next) if wasEscaped  => recurse(next)(acc :+ 'n')
+        case ('r', next) if wasEscaped  => recurse(next)(acc :+ 'r')
+        case ('t', next) if wasEscaped  => recurse(next)(acc :+ 't')
+        case (oops, _) if wasEscaped =>
+          ME.raiseError(ParseFailure(s"Illegal escape sequence \\$oops", path))
+        case ('"', next) => ME.pure(acc -> next)
+        case (c, next)   => recurse(next)(acc :+ c)
+      }
+    }
+
+    recurse(i)(Vector.empty)
+  }
+
   private def skipStr(implicit path: Vector[PPath]): Pipe = { s =>
     parseString(path)(s).flatMap[Char](_._2)
   }
   private def skipBool(implicit path: Vector[PPath]): Pipe =
     s => parseBoolean(path)(s).flatMap[Char](_._2)
-
   private def skipComma(implicit path: Vector[PPath]): Pipe = { s =>
     s.take1.flatMap {
       case (',', next) => next
       case (u, _)      => ME.raiseError(ParseFailure(",", u.toString, path))
     }
   }
-
-  private def skipNum(expectedTerminator: ExpectedTerminator)(
-      implicit path: Vector[PPath]): Pipe = { s =>
-    parseNumber(expectedTerminator)(path)(s).flatMap[Char](_._2)
+  private def skipNum(expectedTerminator: ExpectedTerminator)(implicit path: Vector[PPath]): Pipe = {
+    s =>
+      parseNumber(expectedTerminator)(path)(s).flatMap[Char](_._2)
   }
 
   // Does not skip intermediate terminator, eg. `,`
@@ -82,7 +191,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
 
     stream.take1.flatMap {
       case ('"', nextStream) =>
-        val keyStr = nextStream.accUntil(_ == '"')
+        val keyStr = accJsString(nextStream)
 
         keyStr.flatMap {
           case (key, afterKey) =>
@@ -118,37 +227,6 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
       case (uexp, _) => ME.raiseError[Char](ParseFailure("{", uexp.toString, path))
     }
   }
-
-  val parseString: Parse = { implicit path => src =>
-    src.take1
-      .flatMap {
-        case ('"', next) => next.accUntil(_ == '"')
-        case (other, _) =>
-          ME.raiseError[(Vector[Char], Source[Char])](
-            ParseFailure(s"""String should starts with ", but found $other""", path))
-      }
-      .map {
-        case (acc, next) => str(acc.mkString) -> next
-      }
-  }
-  val parseBoolean: Parse = { implicit path => src =>
-    src.isFollowedBy("true".toCharArray.toList).flatMap {
-      case (isTrue, next) =>
-        if (isTrue) {
-          ME.pure(bool(true) -> next)
-        } else {
-          src.isFollowedBy("false".toCharArray.toList).flatMap {
-            case (isFalse, next) =>
-              if (isFalse) {
-                ME.pure(bool(false) -> next)
-              } else {
-                ME.raiseError(ParseFailure("Expecting either `true` or `false`", path))
-              }
-          }
-        }
-    }
-  }
-
   private def parseSign(s: CharSource): Source[(Option[Char], CharSource)] = {
     s.take1.flatMap {
       case (sign(sChar), next) => ME.pure(Some(sChar) -> next)
@@ -230,64 +308,6 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     parseSign(s).flatMap {
       case (maybe, next) => recurse(maybe.toVector, next)
     }
-  }
-
-  def parseNumber(terminator: ExpectedTerminator): Parse = { implicit path => s =>
-    parseNum1(s)(terminator)
-      .flatMap {
-        case Part1(p1, Some(sep1), next) =>
-          parseNum2(next, sep1)(terminator).flatMap {
-            case Part2(p2, Some(sep2), next) =>
-              parseNum3(next)(terminator).flatMap {
-                case (p3, next) =>
-                  val full = (p1 :+ sep1) ++ (p2 :+ sep2) ++ p3
-                  ME.pure(full -> next)
-              }
-            case Part2(p2, None, next) =>
-              val full = (p1 :+ sep1) ++ p2
-              ME.pure(full -> next)
-          }
-        case Part1(p1, None, next) => ME.pure(p1 -> next)
-      }
-      .map {
-        case (numChars, next) => num(numChars.mkString.toDouble) -> next
-      }
-  }
-  def parseArrayItem(n: Int, next: Parse): Parse = { implicit path => s =>
-    def recurse(left: Int): Parse = { implicit path => stream =>
-      if (left == 0) {
-        next(path)(stream)
-      } else {
-        val skip1        = skipOne(Comma)(path)(stream)
-        val skippedComma = skipComma(path)(skip1)
-        val end          = recurse(left - 1)(path)(skippedComma)
-        end
-      }
-    }
-
-    s.take1.flatMap {
-      case ('[', next) => recurse(n)(path)(next)
-      case (u, _)      => ME.raiseError(ParseFailure("[", u.toString, path \ n))
-    }
-  }
-
-  def parseObj(k: String, nextOp: Parse): Parse = { implicit path => stream =>
-    def skipUntilKey(implicit path: Vector[PPath]): Pipe = { s =>
-      parseObjKey(s).take1.flatMap[Char] {
-        case ((key, nextS), _) if key == k => nextS
-        case ((_, nextS), _) =>
-          val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(nextS).drop1
-          skipUntilKey(path)(skippedOne)
-      }
-    }
-
-    nextOp(path \ k) {
-      stream.take1.flatMap {
-        case ('{', next) => skipUntilKey(path \ k)(next)
-        case (c, _)      => ME.raiseError(ParseFailure("{", c.toString, path))
-      }
-    }
-
   }
 
   val parsing: ParseOps[Parse] => Parse = {

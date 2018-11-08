@@ -211,12 +211,12 @@ trait ParserGen {
     }
   }
 
-  // todo: handle escape char, omg
   val jstrGen =
     for {
-      s <- Gen.alphaStr.suchThat(_.length < 200)
+      s <- Gen.asciiPrintableStr.suchThat(_.length < 200)
     } yield {
-      JString(s)
+      // todo: have special test case for escape char
+      JString(s.replace('\\', 'f'))
     }
 
   val jnumGen =
