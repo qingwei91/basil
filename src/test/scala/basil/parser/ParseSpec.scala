@@ -211,12 +211,15 @@ trait ParserGen {
     }
   }
 
+  private val specialChar = Gen.oneOf("\\b", "\\r", "\\f", "\\\\", "\\/")
+
   val jstrGen =
     for {
-      s <- Gen.asciiPrintableStr.suchThat(_.length < 200)
+      raw <- Gen.asciiPrintableStr.suchThat(_.length < 200)
+      sc  <- specialChar
     } yield {
       // todo: have special test case for escape char
-      JString(s.replace('\\', 'f'))
+      JString(raw.replace("\\", sc))
     }
 
   val jnumGen =

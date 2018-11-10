@@ -113,26 +113,38 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   // todo: handle unicode ??? (maybe just dont support it)
   private def accJsString(i: Source[Char])(
       implicit path: Vector[PPath]): Source[(Vector[Char], Source[Char])] = {
-    def recurse(s: Source[Char])(acc: Vector[Char]): Source[(Vector[Char], Source[Char])] = {
-      val wasEscaped = acc.lastOption.contains('\\')
+
+    /**
+      * @param lastCharIsSpecial - we need to know if last
+      *                          char is special or not, so that we can
+      *                          know if the last `\\` starts a new escape
+      *                          sequence, eg. acc = "\\\\", then
+      *                          we should not treat the next char as part of
+      *                          escape sequence
+      * @return
+      */
+    def recurse(s: Source[Char])(
+        acc: Vector[Char],
+        lastCharIsSpecial: Boolean): Source[(Vector[Char], Source[Char])] = {
+      val wasEscaped = !lastCharIsSpecial && acc.lastOption.contains('\\')
 
       s.take1.flatMap {
-        case ('"', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '"')
-        case ('\\', next) if wasEscaped => recurse(next)(acc.dropRight(1) :+ '\\')
-        case ('/', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '/')
-        case ('b', next) if wasEscaped  => recurse(next)(acc :+ 'b')
-        case ('f', next) if wasEscaped  => recurse(next)(acc :+ 'f')
-        case ('n', next) if wasEscaped  => recurse(next)(acc :+ 'n')
-        case ('r', next) if wasEscaped  => recurse(next)(acc :+ 'r')
-        case ('t', next) if wasEscaped  => recurse(next)(acc :+ 't')
+        case ('"', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '"', true)
+        case ('/', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '/', true)
+        case ('b', next) if wasEscaped  => recurse(next)(acc :+ 'b', true)
+        case ('f', next) if wasEscaped  => recurse(next)(acc :+ 'f', true)
+        case ('n', next) if wasEscaped  => recurse(next)(acc :+ 'n', true)
+        case ('r', next) if wasEscaped  => recurse(next)(acc :+ 'r', true)
+        case ('t', next) if wasEscaped  => recurse(next)(acc :+ 't', true)
+        case ('\\', next) if wasEscaped => recurse(next)(acc.dropRight(1) :+ '\\', true)
         case (oops, _) if wasEscaped =>
           ME.raiseError(ParseFailure(s"Illegal escape sequence \\$oops", path))
         case ('"', next) => ME.pure(acc -> next)
-        case (c, next)   => recurse(next)(acc :+ c)
+        case (c, next)   => recurse(next)(acc :+ c, false)
       }
     }
 
-    recurse(i)(Vector.empty)
+    recurse(i)(Vector.empty, lastCharIsSpecial = false)
   }
 
   private def skipStr(implicit path: Vector[PPath]): Pipe = { s =>
