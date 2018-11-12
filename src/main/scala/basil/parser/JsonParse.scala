@@ -149,7 +149,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     recurse(i)(Vector.empty, lastCharIsSpecial = false)
   }
 
-  def skipWS(s: CharSource): CharSource = {
+  private def skipWS(s: CharSource): CharSource = {
     s.take1.flatMap[Char] {
       case (whitespace(_), next) => skipWS(next)
       case (c, next)             => Cons.cons(next, c)
@@ -271,7 +271,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   private case class Part1(part1: Vector[Char], sep: Option[Char], cont: CharSource)
   private case class Part2(part2: Vector[Char], sep: Option[Char], cont: CharSource)
 
-  def consumeTillTermination[A](s: CharSource)(
+  private def consumeTillTermination[A](s: CharSource)(
       term: ExpectedTerminator,
       f: CharSource => Source[A])(implicit p: Vector[PPath]): Source[A] = {
     skipWS(s).take1.flatMap {
