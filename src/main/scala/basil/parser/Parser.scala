@@ -30,3 +30,9 @@ object sign {
 object exponent {
   def unapply(c: Char): Option[Char] = if (c == 'e' || c == 'E') { Some(c) } else None
 }
+
+object whitespace {
+  private val ws = List(' ', '\n', '\t', '\r')
+
+  def unapply(arg: Char): Option[Char] = Some(arg).filter(ws.contains)
+}

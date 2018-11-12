@@ -10,7 +10,7 @@ final case class ParseFailure(msg: String, path: Vector[PPath] = Vector.empty) e
 object ParseFailure {
 
   def apply(expect: String, received: String, path: Vector[PPath]): ParseFailure =
-    apply(s"Expect $expect, but got $received", path)
+    ParseFailure(s"Expect $expect, but got $received", path)
 
   def termination(implicit path: Vector[PPath]): ParseFailure =
     ParseFailure("Unexpected termination", path)

@@ -5,7 +5,7 @@ import cats.Functor
 import cats.syntax.functor._
 import org.json4s._
 import org.json4s.JsonDSL._
-import org.json4s.native.JsonMethods.{compact, render}
+import org.json4s.native.JsonMethods.{compact, render, pretty}
 import org.scalacheck.Gen
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{MustMatchers, WordSpec}
@@ -27,7 +27,7 @@ abstract class ParseSpec[F[_]: Functor]
     def getJVal: JValue = getLast(f.map(_._1))
   }
 
-  "stream parser" should {
+  "parser" should {
     "parse string" in new PContext[F] {
       import parser._
       forAll(jstrGen) { js =>
@@ -59,7 +59,7 @@ abstract class ParseSpec[F[_]: Functor]
       val i = 12
       forAll(jsArrGen(i, jstrGen.branch)) {
         case (js, expected) =>
-          val jsonStr = compact(render(js)).toCharArray
+          val jsonStr = pretty(render(js)).toCharArray
 
           val decoded =
             parseArrayItem(i, parser.parseString)(path)(liftF(jsonStr)).getJVal

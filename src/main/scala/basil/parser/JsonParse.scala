@@ -25,7 +25,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   type Pipe = CharSource => CharSource
 
   val parseString: Parse = { implicit path => src =>
-    src.take1
+    skipWS(src).take1
       .flatMap {
         case ('"', next) => accJsString(next)
         case (other, _) =>
@@ -37,12 +37,13 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
       }
   }
   val parseBoolean: Parse = { implicit path => src =>
-    src.isFollowedBy("true".toCharArray.toList).flatMap {
+    val withoutWS = skipWS(src)
+    withoutWS.isFollowedBy("true".toCharArray.toList).flatMap {
       case (isTrue, next) =>
         if (isTrue) {
           ME.pure(bool(true) -> next)
         } else {
-          src.isFollowedBy("false".toCharArray.toList).flatMap {
+          withoutWS.isFollowedBy("false".toCharArray.toList).flatMap {
             case (isFalse, next) =>
               if (isFalse) {
                 ME.pure(bool(false) -> next)
@@ -54,7 +55,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     }
   }
   def parseNumber(terminator: ExpectedTerminator): Parse = { implicit path => s =>
-    parseNum1(s)(terminator)
+    parseNum1(skipWS(s))(terminator)
       .flatMap {
         case Part1(p1, Some(sep1), next) =>
           parseNum2(next, sep1)(terminator).flatMap {
@@ -77,16 +78,15 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   def parseArrayItem(n: Int, next: Parse): Parse = { implicit path => s =>
     def recurse(left: Int): Parse = { implicit path => stream =>
       if (left == 0) {
-        next(path)(stream)
+        next(path)(skipWS(stream))
       } else {
-        val skip1        = skipOne(Comma)(path)(stream)
-        val skippedComma = skipComma(path)(skip1)
-        val end          = recurse(left - 1)(path)(skippedComma)
-        end
+        val skip1        = skipOne(Comma)(path)(skipWS(stream))
+        val skippedComma = skipComma(path)(skipWS(skip1))
+        recurse(left - 1)(path)(skippedComma)
       }
     }
 
-    s.take1.flatMap {
+    skipWS(s).take1.flatMap {
       case ('[', next) => recurse(n)(path \ n)(next)
       case (u, _)      => ME.raiseError(ParseFailure("[", u.toString, path \ n))
     }
@@ -102,7 +102,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     }
 
     nextOp(path \ k) {
-      stream.take1.flatMap {
+      skipWS(stream).take1.flatMap {
         case ('{', next) => skipUntilKey(path \ k)(next)
         case (c, _)      => ME.raiseError(ParseFailure("{", c.toString, path))
       }
@@ -145,6 +145,13 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     }
 
     recurse(i)(Vector.empty, lastCharIsSpecial = false)
+  }
+
+  def skipWS(s: CharSource): CharSource = {
+    s.take1.flatMap[Char] {
+      case (whitespace(_), next) => skipWS(next)
+      case (c, next)             => Cons.cons(next, c)
+    }
   }
 
   private def skipStr(implicit path: Vector[PPath]): Pipe = { s =>
@@ -201,13 +208,13 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   private def parseObjKey(stream: CharSource)(
       implicit path: Vector[PPath]): Source[(String, CharSource)] = {
 
-    stream.take1.flatMap {
+    skipWS(stream).take1.flatMap {
       case ('"', nextStream) =>
         val keyStr = accJsString(nextStream)
 
         keyStr.flatMap {
           case (key, afterKey) =>
-            afterKey.take1.flatMap {
+            skipWS(afterKey).take1.flatMap {
               case (':', next) => ME.pure(key.mkString -> next)
               case (o, _) =>
                 ME.raiseError(ParseFailure(s": for key ${key.mkString} finding", o.toString, path))
@@ -258,6 +265,15 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   private case class Part1(part1: Vector[Char], sep: Option[Char], cont: CharSource)
   private case class Part2(part2: Vector[Char], sep: Option[Char], cont: CharSource)
 
+  def consumeTillTermination[A](s: CharSource)(
+      term: ExpectedTerminator,
+      f: CharSource => Source[A])(implicit p: Vector[PPath]): Source[A] = {
+    skipWS(s).take1.flatMap {
+      case (t, _) if term.matchChar(t) => f(s)
+      case (uexp, _)                   => ME.raiseError(ParseFailure(term.toString, uexp.toString, p))
+    }
+  }
+
   private def parseNum1(s: CharSource)(term: ExpectedTerminator)(
       implicit p: Vector[PPath]): Source[Part1] = {
     def recurse(acc: Vector[Char], s: CharSource): Source[Part1] = {
@@ -267,7 +283,9 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
         case ('.', next)                 => ME.pure(Part1(acc, Some('.'), next))
         case ('E', next)                 => ME.pure(Part1(acc, Some('e'), next))
         case ('e', next)                 => ME.pure(Part1(acc, Some('e'), next))
-        case (u, _)                      => ME.raiseError[Part1](ParseFailure(s"Digit or $term", u.toString, p))
+        case (whitespace(_), next) =>
+          consumeTillTermination(next)(term, n => ME.pure(Part1(acc, None, n)))
+        case (u, _) => ME.raiseError[Part1](ParseFailure(s"Digit or $term", u.toString, p))
       } {
         if (term == End && acc.nonEmpty) {
           ME.pure(Part1(acc, None, Monoid.empty))
@@ -288,7 +306,9 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
         case (digit(d), next)                    => recurse(acc :+ d, next)
         case (t, _) if term.matchChar(t)         => ME.pure(Part2(acc, None, s))
         case (exponent(e), next) if p1Sep == '.' => ME.pure(Part2(acc, Some(e), next))
-        case (u, _)                              => ME.raiseError[Part2](ParseFailure(s"Digit or $term", u.toString, p))
+        case (whitespace(_), next) =>
+          consumeTillTermination(next)(term, n => ME.pure(Part2(acc, None, n)))
+        case (u, _) => ME.raiseError[Part2](ParseFailure(s"Digit or $term", u.toString, p))
       } {
         if (term == End && acc.nonEmpty) {
           ME.pure(Part2(acc, None, Monoid.empty))
@@ -306,6 +326,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
       s.take1Opt.flatFold {
         case (digit(d), next)            => recurse(acc :+ d, next)
         case (t, _) if term.matchChar(t) => ME.pure(acc -> s)
+        case (whitespace(_), next)       => consumeTillTermination(next)(term, n => ME.pure(acc -> n))
         case (u, _) =>
           ME.raiseError[(Vector[Char], CharSource)](
             ParseFailure(s"Digit or $term", u.toString, path))

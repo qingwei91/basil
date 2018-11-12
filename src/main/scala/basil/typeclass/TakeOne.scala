@@ -84,8 +84,7 @@ object TakeOne extends TakeOneSyntax {
       }
     }
 
-    override def take1Opt[Element](
-        src: Array[Element]): Array[(Option[Element], Array[Element])] = {
+    override def take1Opt[Element](src: Array[Element]): Array[(Option[Element], Array[Element])] = {
       if (src.length > 0) {
         val tail = util.Arrays
           .asList(src: _*)
