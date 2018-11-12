@@ -3,14 +3,13 @@ package basil.parser
 import basil.data._
 import cats.Functor
 import cats.syntax.functor._
-import org.json4s._
 import org.json4s.JsonDSL._
-import org.json4s.native.JsonMethods.{compact, render, pretty}
+import org.json4s._
+import org.json4s.native.JsonMethods.{pretty, render}
 import org.scalacheck.Gen
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{MustMatchers, WordSpec}
-import schemes.Fix
-import schemes._
+import schemes.{Fix, _}
 
 abstract class ParseSpec[F[_]: Functor]
     extends WordSpec
@@ -31,7 +30,7 @@ abstract class ParseSpec[F[_]: Functor]
     "parse string" in new PContext[F] {
       import parser._
       forAll(jstrGen) { js =>
-        val jsonStr = compact(render(js)).toCharArray
+        val jsonStr = pretty(render(js)).toCharArray
         val decoded = parseString(path)(liftF(jsonStr)).getJVal
 
         decoded mustBe js
@@ -40,7 +39,7 @@ abstract class ParseSpec[F[_]: Functor]
     "parse boolean" in new PContext[F] {
       import parser._
       List(JBool.True, JBool.False).foreach { js =>
-        val jsonStr = compact(render(js)).toCharArray
+        val jsonStr = pretty(render(js)).toCharArray
         val decoded = parseBoolean(path)(liftF(jsonStr)).getJVal
 
         decoded mustBe js
@@ -49,7 +48,7 @@ abstract class ParseSpec[F[_]: Functor]
     "parse number" in new PContext[F] {
       import parser._
       forAll(jnumGen) { num =>
-        val jsonStr = compact(render(num)).toCharArray
+        val jsonStr = pretty(render(num)).toCharArray
         val decoded = parseNumber(End)(path)(liftF(jsonStr)).getJVal
         decoded mustBe num
       }
@@ -70,7 +69,7 @@ abstract class ParseSpec[F[_]: Functor]
     "parse object" in new PContext[F] {
       forAll(jsObjGen("myKey", jsArrGen(2, jstrGen.branch))) {
         case (obj, expected) =>
-          val jsonStr = compact(render(obj)).toCharArray
+          val jsonStr = pretty(render(obj)).toCharArray
 
           val ops     = Start.getKey("myKey").getN(2).getString.t
           val decoded = parseJSStream(ops, liftF(jsonStr)).getJVal
@@ -80,7 +79,7 @@ abstract class ParseSpec[F[_]: Functor]
     "parse random JS" in new PContext[F] {
       forAll(opsJsGen(5)) {
         case (ops, js, extracted) =>
-          val jsStr = compact(render(js)).toCharArray
+          val jsStr = pretty(render(js)).toCharArray
 
           val decoded = parseJSStream(Fix(ops), liftF(jsStr)).getJVal
 
@@ -89,7 +88,7 @@ abstract class ParseSpec[F[_]: Functor]
     }
     "parse partial array" in new PContext[F] {
       val arr: JArray  = List(2, 3, 10, 20, 31)
-      val partialJsStr = compact(render(arr)).toCharArray.dropRight(6)
+      val partialJsStr = pretty(render(arr)).toCharArray.dropRight(6)
       val ops          = Start.getN(2).getNum.t
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getJVal
@@ -104,7 +103,7 @@ abstract class ParseSpec[F[_]: Functor]
           ("{wontwork" -> List(true, false))
       )
 
-      val partialJsStr = compact(render(obj)).toCharArray.dropRight(15)
+      val partialJsStr = pretty(render(obj)).toCharArray.dropRight(15)
       val ops          = Start.getKey("").getKey("really?").getString.t
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getJVal

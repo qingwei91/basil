@@ -80,7 +80,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
       if (left == 0) {
         next(path)(skipWS(stream))
       } else {
-        val skip1        = skipOne(Comma)(path)(skipWS(stream))
+        val skip1        = skipOne(Comma)(path)(stream)
         val skippedComma = skipComma(path)(skipWS(skip1))
         recurse(left - 1)(path)(skippedComma)
       }
@@ -96,8 +96,10 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
       parseObjKey(s).take1.flatMap[Char] {
         case ((key, nextS), _) if key == k => nextS
         case ((_, nextS), _) =>
-          val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(nextS).drop1
-          skipUntilKey(path)(skippedOne)
+          val skippedOne = skipOne(Comma)(path)(nextS)
+          val dropComma  = skipWS(skippedOne).drop1
+
+          skipUntilKey(path)(dropComma)
       }
     }
 
@@ -165,14 +167,14 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
       case (u, _)      => ME.raiseError(ParseFailure(",", u.toString, path))
     }
   }
-  private def skipNum(expectedTerminator: ExpectedTerminator)(implicit path: Vector[PPath]): Pipe = {
-    s =>
-      parseNumber(expectedTerminator)(path)(s).flatMap[Char](_._2)
+  private def skipNum(expectedTerminator: ExpectedTerminator)(
+      implicit path: Vector[PPath]): Pipe = { s =>
+    parseNumber(expectedTerminator)(path)(s).flatMap[Char](_._2)
   }
 
   // Does not skip intermediate terminator, eg. `,`
   private def skipOne(term: ExpectedTerminator)(implicit path: Vector[PPath]): Pipe = { stream =>
-    stream.peek1.flatMap {
+    skipWS(stream).peek1.flatMap {
       case ('"', next)      => skipStr(path)(next)
       case ('t', next)      => skipBool(path)(next)
       case ('f', next)      => skipBool(path)(next)
@@ -198,9 +200,11 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   }
 
   private def takeTilArrayEnd(implicit path: Vector[PPath]): Pipe = { s =>
-    skipOne(OneOf(List(Bracket, Comma)))(path)(s).peek1.flatMap {
-      case (']', next) => next.drop1
-      case (',', next) => takeTilArrayEnd(path)(next.drop1)
+    val skipped = skipOne(OneOf(Bracket, Comma))(path)(s)
+
+    skipWS(skipped).take1.flatMap {
+      case (']', next) => next
+      case (',', next) => takeTilArrayEnd(path)(next)
       case (unexp, _)  => ME.raiseError(ParseFailure(",", unexp.toString, path))
     }
   }
@@ -228,7 +232,9 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   private def skipKVPair(implicit path: Vector[PPath]): Pipe = { s =>
     parseObjKey(s).flatMap {
       case (_, next) =>
-        skipOne(OneOf(List(Comma, CurlyBrace)))(path)(next).peek1.flatMap {
+        val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(next)
+
+        skipWS(skippedOne).peek1.flatMap {
           case (',', next) => skipKVPair(path)(next.drop1)
           case ('}', next) => next
           case (uexp, _)   => ME.raiseError(ParseFailure(", or }", uexp.toString, path))
