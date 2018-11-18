@@ -1,6 +1,7 @@
 package basil.parser
 
 import basil.data._
+import basil.data.ParseOpsConstructor._
 import cats.Functor
 import cats.syntax.functor._
 import org.json4s.JsonDSL._
@@ -15,11 +16,16 @@ abstract class ParseSpec[F[_]: Functor]
     extends WordSpec
     with MustMatchers
     with GeneratorDrivenPropertyChecks
-    with ParseOpsConstructor
     with ParserGen {
 
+  // JsonParse implementation to test
   implicit val parser: JsonParse[F, JValue]
+
+  // A way to lift char array to the Source effect for testing
   def liftF(charArr: Array[Char]): F[Char]
+
+  // get the last element from F[A], with the potential of
+  // throwing
   def getLast[A](f: F[A]): A
 
   private implicit class FOps[A](f: F[(JValue, A)]) {

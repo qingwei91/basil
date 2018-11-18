@@ -5,6 +5,12 @@ import cats.syntax.functor._
 import cats.{Applicative, Eval, Show, Traverse}
 import schemes._
 
+/**
+  * Potentially recursive tree to represent data that's needed
+  * from json
+  *
+  * todo: support sequence
+  */
 sealed trait ParseOps[+A]
 
 case object GetString                       extends ParseOps[Nothing]

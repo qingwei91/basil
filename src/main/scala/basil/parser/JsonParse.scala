@@ -10,6 +10,16 @@ import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 
+/**
+  * Core abstraction of the library
+  * Contains logic to extract data from json
+  *
+  * The main selling point is that it works on 1 character at a time
+  * and thus can work on partial json and stream of json
+  *
+  * By trying to extract the exact data needed, it avoids creating
+  * intermediate data structure
+  */
 abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
                                           ME: MonadError[Source, ParseFailure],
                                           Monoid: Monoid[Source[Char]],
@@ -54,6 +64,19 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
         }
     }
   }
+
+  /**
+    * Number is broken down into 3 parts
+    *
+    * 20.6e10
+    *
+    * part 1 - 20 terminated by .
+    * part 2 - 6 terminated by e
+    * part 3 - 10 terminated by $terminator
+    *
+    * @param terminator to indicate what character terminates the number
+    * @return
+    */
   def parseNumber(terminator: ExpectedTerminator): Parse = { implicit path => s =>
     parseNum1(skipWS(s))(terminator)
       .flatMap {
@@ -113,6 +136,21 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
   }
 
   // todo: handle unicode ??? (maybe just dont support it)
+  /**
+    * Method to accumulate json string
+    * Expect input to NOT starts with double quote, expects String to end with
+    * double quote
+    *
+    * Returns a Source of Vector[Char] and Source[Char]
+    *   Vector[Char] represents the js string without double quotes, can be empty
+    *   Source[Char] represent subsequent stream of char after consuming string
+    *
+    * eg. Input = I am pretty", next...
+    *     Output = (I am pretty -> Source(, next...))
+    * @param i
+    * @param path
+    * @return
+    */
   private def accJsString(i: Source[Char])(
       implicit path: Vector[PPath]): Source[(Vector[Char], Source[Char])] = {
 

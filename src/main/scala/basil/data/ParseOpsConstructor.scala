@@ -2,8 +2,15 @@ package basil.data
 
 import schemes.Fix
 
-trait ParseOpsConstructor {
-  implicit class ContinuableBy(c: Continuable[ParseOps]) {
+object ParseOpsConstructor {
+
+  /**
+    * Syntatic sugar to support creating nested ParseOps structure
+    * using builder pattern
+    *
+    * todo: how much overhead does this adds?
+    */
+  implicit class ContinuableBy(val c: Continuable[ParseOps]) extends AnyVal {
     def getKey(key: String): Continuable[ParseOps] = {
       val cont: Fix[ParseOps] => Fix[ParseOps] = { next =>
         Fix(GetKey(key, next))
@@ -44,5 +51,3 @@ sealed trait ExprTree[A[_]]
 case class Continuable[A[_]](cont: Fix[A] => Fix[A], terminator: ExpectedTerminator)
     extends ExprTree[A]
 case class ExprEnd[A[_]](t: Fix[A]) extends ExprTree[A]
-
-object ParseOpsConstructor extends ParseOpsConstructor

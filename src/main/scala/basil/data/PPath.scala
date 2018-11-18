@@ -2,6 +2,15 @@ package basil.data
 
 import cats.Show
 
+/**
+  * ADT to represent the position of parsing
+  * mainly for error reporting
+  *
+  * Right now it just show the path we are `trying` to parse
+  *
+  * But the decoder actually perform parsing and skipping,
+  * we should look into incorporating information of skipping into it
+  */
 sealed trait PPath
 
 /**

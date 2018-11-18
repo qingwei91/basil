@@ -5,6 +5,16 @@ import schemes.{Fix, Schemes}
 
 object Parser {
 
+  /**
+    * The canonical entry point of this library, to extract certain
+    * piece of data from a data source
+    *
+    * @param expr The parse operations tree that describe data
+    *             user wanted
+    * @param src Data source
+    * @tparam JV User supplied Json AST type
+    * @return
+    */
   def parseJS[Source[_], JV](expr: Fix[ParseOps], src: Source[Char])(
       implicit parse: JsonParse[Source, JV]): Source[(JV, parse.CharSource)] = {
     Schemes.cata(expr)(parse.parsing).apply(Vector.empty)(src)

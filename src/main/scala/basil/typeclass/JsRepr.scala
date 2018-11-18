@@ -6,8 +6,6 @@ trait JsRepr[JVal] {
   type Str <: JVal
   type Num <: JVal
   type Bool <: JVal
-  type Arr <: JVal
-  type Obj <: JVal
   type Null <: JVal
 
   def str(s: String): Str
@@ -21,8 +19,6 @@ object JsRepr {
     override type Str  = JString
     override type Num  = JDouble
     override type Bool = JBool
-    override type Arr  = JArray
-    override type Obj  = JObject
     override type Null = JNull.type
 
     override def str(s: String): Str = JString(s)

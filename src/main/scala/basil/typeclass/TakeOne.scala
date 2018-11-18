@@ -11,11 +11,46 @@ import cats.{Eq, Functor, Monad}
 
 import scala.util.{Success, Try}
 
+/**
+  * Typeclass to provide capability of taking 1 element from a data
+  * source
+  *
+  * User needs to implement 2 methods
+  *   - take1
+  *   - take1Opt
+  * @tparam Source
+  */
 trait TakeOne[Source[_]] {
+
+  /**
+    * takes an element from Source and return the Element with
+    * the rest of the Data without escaping the Source context
+    *
+    * It will return empty source if input source is empty,
+    * the emptiness is implied and not captured in part of the type
+    *
+    * essentially List[Int]() and List[String]() are equivalent
+    */
   def take1[Element](src: Source[Element]): Source[(Element, Source[Element])]
 
+  /**
+    * takes an element from Source and return the element with
+    * the rest of the Data
+    *
+    * It will return None and Empty source if input source is empty,
+    * the main difference of this method versus `take1` is that
+    * `take1Opt` allows caller to handle emptiness within Source
+    * context
+    *
+    * This is useful when you want to tranform empty Source into
+    * something else
+    */
   def take1Opt[Element](src: Source[Element]): Source[(Option[Element], Source[Element])]
 
+  /**
+    * returns the 1st element from the source without consuming
+    * the data source
+    */
   def peek1[Element](src: Source[Element])(
       implicit Functor: Functor[Source],
       cons: Cons[Source]): Source[(Element, Source[Element])] = {

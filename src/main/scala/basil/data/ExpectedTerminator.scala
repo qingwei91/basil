@@ -1,5 +1,15 @@
 package basil.data
 
+/**
+  * ADT to represent expected terminator when parsing json
+  * it's only use when decoding number because number does not
+  * comes with native terminator
+  *
+  * eg. it's evident that `"halo"` is a complete string,
+  *     and `"halo` is not, but we cannot do the same for number
+  *     `2000` and `20000` both can be incomplete
+  *     depending on the subsequent characters
+  */
 sealed trait ExpectedTerminator
 case object Comma                             extends ExpectedTerminator
 case object Bracket                           extends ExpectedTerminator
