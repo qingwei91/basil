@@ -5,12 +5,9 @@ import basil.typeclass.TakeOne._
 import basil.typeclass.{Cons, TakeOne}
 import cats.instances.char._
 import cats.kernel.Monoid
-import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
 import cats.{MonadError, ~>}
-
-import scala.language.postfixOps
 
 /**
   * Core abstraction of the library
@@ -386,14 +383,6 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  private def parseNullable[I](ops: Parse[I]): Parse[Option[I]] = { path => in =>
-    ops(path ?)(in)
-      .map[(Option[I], CharSource)] {
-        case (i, src) => Some(i) -> src
-      }
-      .handleErrorWith(_ => ME.pure(None -> in))
-  }
-
   def parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
     override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
       fa match {
@@ -402,7 +391,6 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case GetNum(t)              => parseNumber(t)
         case getN: GetN[Parse, i]   => parseArrayItem(getN.n, getN.next)
         case getK: GetKey[Parse, i] => parseObj(getK.key, getK.next)
-        case GetNullable(ops)       => parseNullable(ops)
       }
     }
   }

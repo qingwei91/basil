@@ -1,7 +1,7 @@
 package basil.parser
 
-import basil.data._
 import basil.data.ParseOpsConstructor._
+import basil.data._
 import cats.Functor
 import cats.syntax.functor._
 import org.json4s.JsonDSL._
@@ -10,7 +10,6 @@ import org.json4s.native.JsonMethods.{pretty, render}
 import org.scalacheck.Gen
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{MustMatchers, WordSpec}
-import schemes.{Fix, _}
 
 abstract class ParseSpec[F[_]: Functor]
     extends WordSpec
@@ -19,7 +18,7 @@ abstract class ParseSpec[F[_]: Functor]
     with ParserGen {
 
   // JsonParse implementation to test
-  implicit val parser: JsonParse[F, JValue]
+  implicit val parser: JsonParse[F]
 
   // A way to lift char array to the Source effect for testing
   def liftF(charArr: Array[Char]): F[Char]
@@ -28,8 +27,8 @@ abstract class ParseSpec[F[_]: Functor]
   // throwing
   def getLast[A](f: F[A]): A
 
-  private implicit class FOps[A](f: F[(JValue, A)]) {
-    def getJVal: JValue = getLast(f.map(_._1))
+  private implicit class FOps[I, A](f: F[(I, A)]) {
+    def getVal: I = getLast(f.map(_._1))
   }
 
   "parser" should {
@@ -37,7 +36,7 @@ abstract class ParseSpec[F[_]: Functor]
       import parser._
       forAll(jstrGen) { js =>
         val jsonStr = pretty(render(js)).toCharArray
-        val decoded = parseString(path)(liftF(jsonStr)).getJVal
+        val decoded = parseString(path)(liftF(jsonStr)).getVal
 
         decoded mustBe js
       }
@@ -46,7 +45,7 @@ abstract class ParseSpec[F[_]: Functor]
       import parser._
       List(JBool.True, JBool.False).foreach { js =>
         val jsonStr = pretty(render(js)).toCharArray
-        val decoded = parseBoolean(path)(liftF(jsonStr)).getJVal
+        val decoded = parseBoolean(path)(liftF(jsonStr)).getVal
 
         decoded mustBe js
       }
@@ -55,7 +54,7 @@ abstract class ParseSpec[F[_]: Functor]
       import parser._
       forAll(jnumGen) { num =>
         val jsonStr = pretty(render(num)).toCharArray
-        val decoded = parseNumber(End)(path)(liftF(jsonStr)).getJVal
+        val decoded = parseNumber(End)(path)(liftF(jsonStr)).getVal
         decoded mustBe num
       }
     }
@@ -67,7 +66,7 @@ abstract class ParseSpec[F[_]: Functor]
           val jsonStr = pretty(render(js)).toCharArray
 
           val decoded =
-            parseArrayItem(i, parser.parseString)(path)(liftF(jsonStr)).getJVal
+            parseArrayItem(i, parser.parseString)(path)(liftF(jsonStr)).getVal
 
           decoded mustBe expected
       }
@@ -77,8 +76,8 @@ abstract class ParseSpec[F[_]: Functor]
         case (obj, expected) =>
           val jsonStr = pretty(render(obj)).toCharArray
 
-          val ops     = Start.getKey("myKey").getN(2).getString.t
-          val decoded = parseJSStream(ops, liftF(jsonStr)).getJVal
+          val ops     = Start[String].getKey("myKey").getN(2).getString.t
+          val decoded = parseJSStream(ops, liftF(jsonStr)).getVal
           decoded mustBe expected
       }
     }
@@ -87,7 +86,7 @@ abstract class ParseSpec[F[_]: Functor]
         case (ops, js, extracted) =>
           val jsStr = pretty(render(js)).toCharArray
 
-          val decoded = parseJSStream(Fix(ops), liftF(jsStr)).getJVal
+          val decoded = parseJSStream(HFix(ops), liftF(jsStr)).getVal
 
           decoded mustBe extracted
       }
@@ -95,9 +94,9 @@ abstract class ParseSpec[F[_]: Functor]
     "parse partial array" in new PContext[F] {
       val arr: JArray  = List(2, 3, 10, 20, 31)
       val partialJsStr = pretty(render(arr)).toCharArray.dropRight(6)
-      val ops          = Start.getN(2).getNum.t
+      val ops          = Start[Double].getN(2).getNum.t
 
-      val decoded = parseJSStream(ops, liftF(partialJsStr)).getJVal
+      val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
 
       decoded mustBe JDouble(10)
     }
@@ -110,26 +109,28 @@ abstract class ParseSpec[F[_]: Functor]
       )
 
       val partialJsStr = pretty(render(obj)).toCharArray.dropRight(15)
-      val ops          = Start.getKey("").getKey("really?").getString.t
+      val ops          = Start[String].getKey("").getKey("really?").getString.t
 
-      val decoded = parseJSStream(ops, liftF(partialJsStr)).getJVal
+      val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
       decoded mustBe JString("nope")
     }
   }
 }
 
-private abstract class PContext[F[_]](implicit val parser: JsonParse[F, JValue]) {
+private abstract class PContext[F[_]](implicit val parser: JsonParse[F]) {
   implicit val path: Vector[PPath] = Vector.empty
 
-  def parseJSStream(ops: Fix[ParseOps], s: F[Char]): F[(JValue, F[Char])] =
-    Parser.parseJS[F, JValue](ops, s)(parser)
+  def parseJSStream[I](ops: HFix[ParseOps, I], s: F[Char]): F[(I, F[Char])] =
+    Parser.parseJS[F, I](ops, s)(parser)
 }
 
 trait ParserGen {
-  private def endingOpGen: Gen[ExpectedTerminator => ParseOps[Nothing]] = {
-    val s: ExpectedTerminator => ParseOps[Nothing] = _ => GetString
-    val n: ExpectedTerminator => ParseOps[Nothing] = x => GetNum(x)
-    val b: ExpectedTerminator => ParseOps[Nothing] = _ => GetBool
+  type OpTree[I] = ParseOps[HFix[ParseOps, ?], I]
+
+  private def endingOpGen: Gen[ExpectedTerminator => ParseOps[Nothing, _]] = {
+    val s: ExpectedTerminator => ParseOps[Nothing, String]  = _ => GetString
+    val n: ExpectedTerminator => ParseOps[Nothing, Double]  = x => GetNum(x)
+    val b: ExpectedTerminator => ParseOps[Nothing, Boolean] = _ => GetBool
 
     Gen.oneOf(s, n, b)
   }
@@ -138,39 +139,22 @@ trait ParserGen {
     def branch: Gen[(A, A)] = gen.map(s => s -> s)
   }
 
-  type TransformOps = ParseOps[Fix[ParseOps]] => ParseOps[Fix[ParseOps]]
+  private def nonEndingOpGen[_](
+      gen: Gen[ExpectedTerminator => OpTree[_]]): Gen[ExpectedTerminator => OpTree[_]] = {
 
-  private def nonEndingOpGen(gen: Gen[ExpectedTerminator => ParseOps[Fix[ParseOps]]])
-    : Gen[ExpectedTerminator => ParseOps[Fix[ParseOps]]] = {
-
-    val nullableG: Gen[TransformOps] = {
-      Gen
-        .frequency(
-          1 -> Gen.const(true),
-          9 -> Gen.const(false)
-        )
-        .map { isNull =>
-          if (isNull) { ops =>
-            GetNullable(Fix(ops))
-          } else { ops =>
-            ops
-          }
-        }
-    }
     for {
       endingOp <- gen
       n        <- Gen.choose(0, 5)
       key      <- Gen.alphaStr.filter(_.nonEmpty)
-      nullable <- nullableG
-      op <- Gen.oneOf(GetN(n, Fix(endingOp(OneOf(Bracket, Comma)))),
-                      GetKey(key, Fix(endingOp(OneOf(Comma, CurlyBrace)))))
+      op <- Gen.oneOf[OpTree[_]](GetN(n, HFix(endingOp(OneOf(Bracket, Comma)))),
+                                 GetKey(key, HFix(endingOp(OneOf(Comma, CurlyBrace)))))
     } yield { _: ExpectedTerminator =>
-      nullable(op)
+      op
     }
   }
 
-  def opsGen(depth: Int): Gen[ParseOps[Fix[ParseOps]]] = {
-    def recurse(depth: Int): Gen[ExpectedTerminator => ParseOps[Fix[ParseOps]]] = {
+  def opsGen(depth: Int): Gen[OpTree[_]] = {
+    def recurse(depth: Int): Gen[ExpectedTerminator => OpTree[_]] = {
       depth match {
         case 0 => endingOpGen
         case n => nonEndingOpGen(recurse(n - 1))
@@ -184,7 +168,7 @@ trait ParserGen {
 
   }
 
-  def opsJsGen(depth: Int): Gen[(ParseOps[Fix[ParseOps]], JValue, JValue)] = {
+  def opsJsGen(depth: Int): Gen[(OpTree[_], JValue, JValue)] = {
     for {
       ops                 <- opsGen(depth)
       (jValue, extracted) <- jsGen(ops)
@@ -198,21 +182,13 @@ trait ParserGen {
     *         _._1 is the nested JsValue
     *         _._2 is the drilldown value that should be extracted by our parsing
     */
-  def jsGen(op: ParseOps[Fix[ParseOps]]): Gen[(JValue, JValue)] = {
+  def jsGen[I](op: OpTree[I]): Gen[(JValue, JValue)] = {
     op match {
       case GetString         => jstrGen.branch
       case GetNum(_)         => jnumGen.branch
       case GetBool           => Gen.oneOf(JBool.False, JBool.True).branch
       case GetN(n, next)     => jsArrGen(n, jsGen(next.unfix))
       case GetKey(key, next) => jsObjGen(key, jsGen(next.unfix))
-      case GetNullable(ops) =>
-        jsGen(ops.unfix).flatMap {
-          case (nested, deepdown) =>
-            Gen
-              .some(Gen.const(nested))
-              .map(_.fold[JValue](JNull)(identity))
-              .map(_ -> deepdown)
-        }
     }
   }
 
