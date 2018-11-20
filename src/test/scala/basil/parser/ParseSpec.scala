@@ -38,7 +38,7 @@ abstract class ParseSpec[F[_]: Functor]
         val jsonStr = pretty(render(js)).toCharArray
         val decoded = parseString(path)(liftF(jsonStr)).getVal
 
-        decoded mustBe js
+        decoded mustBe js.values
       }
     }
     "parse boolean" in new PContext[F] {
@@ -47,7 +47,7 @@ abstract class ParseSpec[F[_]: Functor]
         val jsonStr = pretty(render(js)).toCharArray
         val decoded = parseBoolean(path)(liftF(jsonStr)).getVal
 
-        decoded mustBe js
+        decoded mustBe js.value
       }
     }
     "parse number" in new PContext[F] {
@@ -55,7 +55,7 @@ abstract class ParseSpec[F[_]: Functor]
       forAll(jnumGen) { num =>
         val jsonStr = pretty(render(num)).toCharArray
         val decoded = parseNumber(End)(path)(liftF(jsonStr)).getVal
-        decoded mustBe num
+        decoded mustBe num.values
       }
     }
     "parse array" in new PContext[F] {
@@ -68,7 +68,7 @@ abstract class ParseSpec[F[_]: Functor]
           val decoded =
             parseArrayItem(i, parser.parseString)(path)(liftF(jsonStr)).getVal
 
-          decoded mustBe expected
+          decoded mustBe expected.values
       }
     }
     "parse object" in new PContext[F] {
@@ -78,7 +78,7 @@ abstract class ParseSpec[F[_]: Functor]
 
           val ops     = Start[String].getKey("myKey").getN(2).getString.t
           val decoded = parseJSStream(ops, liftF(jsonStr)).getVal
-          decoded mustBe expected
+          decoded mustBe expected.values
       }
     }
     "parse random JS" in new PContext[F] {
@@ -88,7 +88,7 @@ abstract class ParseSpec[F[_]: Functor]
 
           val decoded = parseJSStream(HFix(ops), liftF(jsStr)).getVal
 
-          decoded mustBe extracted
+          decoded mustBe extracted.values
       }
     }
     "parse partial array" in new PContext[F] {
@@ -98,7 +98,7 @@ abstract class ParseSpec[F[_]: Functor]
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
 
-      decoded mustBe JDouble(10)
+      decoded mustBe 10.0
     }
 
     "parse partial obj" in new PContext[F] {
@@ -112,7 +112,7 @@ abstract class ParseSpec[F[_]: Functor]
       val ops          = Start[String].getKey("").getKey("really?").getString.t
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
-      decoded mustBe JString("nope")
+      decoded mustBe "nope"
     }
   }
 }
