@@ -1,7 +1,5 @@
 package basil.data
 
-import schemes.Fix
-
 object ParseOpsConstructor {
 
   /**
@@ -10,44 +8,55 @@ object ParseOpsConstructor {
     *
     * todo: how much overhead does this adds?
     */
-  implicit class ContinuableBy(val c: Continuable[ParseOps]) extends AnyVal {
-    def getKey(key: String): Continuable[ParseOps] = {
-      val cont: Fix[ParseOps] => Fix[ParseOps] = { next =>
-        Fix(GetKey(key, next))
+  implicit class ContinuableBy[I](val c: Continuable[ParseOps, I]) extends AnyVal {
+
+    def getNum(implicit eq: I =:= Double): ExprEnd[ParseOps, I] = {
+      val _ = eq
+      ExprEnd(c.cont(HFix[ParseOps, Double](GetNum(c.terminator)).asInstanceOf[HFix[ParseOps, I]]))
+    }
+
+    def getString(implicit eq: I =:= String): ExprEnd[ParseOps, I] = {
+      val _ = eq
+      ExprEnd[ParseOps, I](
+        c.cont(HFix[ParseOps, String](GetString).asInstanceOf[HFix[ParseOps, I]]))
+    }
+
+    def getBool(implicit eq: I =:= Boolean): ExprEnd[ParseOps, I] = {
+      val _ = eq
+      ExprEnd(c.cont(HFix[ParseOps, Boolean](GetBool).asInstanceOf[HFix[ParseOps, I]]))
+    }
+
+    def getKey(key: String): Continuable[ParseOps, I] = {
+      val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
+        HFix(GetKey(key, next))
       }
 
       Continuable(cont.andThen(c.cont), OneOf(Comma, CurlyBrace))
-
-    }
-    def getNum: ExprEnd[ParseOps] = {
-      ExprEnd(c.cont(Fix[ParseOps](GetNum(c.terminator))))
     }
 
-    def getN(n: Int): Continuable[ParseOps] = {
-      val cont: Fix[ParseOps] => Fix[ParseOps] = { next =>
-        Fix(GetN(n, next))
+    def getN(n: Int): Continuable[ParseOps, I] = {
+      val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
+        HFix(GetN(n, next))
       }
 
       Continuable(cont.andThen(c.cont), OneOf(Comma, Bracket))
     }
 
-    def getString: ExprEnd[ParseOps] = ExprEnd(c.cont(Fix[ParseOps](GetString)))
-
-    def getBool: ExprEnd[ParseOps] = ExprEnd(c.cont(Fix[ParseOps](GetBool)))
-
-    def getNullable: Continuable[ParseOps] = {
-      val cont: Fix[ParseOps] => Fix[ParseOps] = { next =>
-        Fix(GetNullable(next))
-      }
-
-      Continuable(cont.andThen(c.cont), c.terminator)
-    }
+//    todo: how to handle Nullable ?
+//    def getNullable: Continuable[ParseOps, I] = {
+//      val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
+//        HFix(GetNullable(next))
+//      }
+//
+//      Continuable(cont.andThen(c.cont), c.terminator)
+//    }
   }
 
-  val Start: Continuable[ParseOps] = Continuable[ParseOps](identity, End)
+  def Start[I]: Continuable[ParseOps, I] = Continuable[ParseOps, I](identity, End)
 }
 
-sealed trait ExprTree[A[_]]
-case class Continuable[A[_]](cont: Fix[A] => Fix[A], terminator: ExpectedTerminator)
+sealed trait ExprTree[A[_[_], _]]
+final case class Continuable[A[_[_], _], I](cont: HFix[A, I] => HFix[A, I],
+                                            terminator: ExpectedTerminator)
     extends ExprTree[A]
-case class ExprEnd[A[_]](t: Fix[A]) extends ExprTree[A]
+final case class ExprEnd[A[_[_], _], I](t: HFix[A, I]) extends ExprTree[A]

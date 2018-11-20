@@ -1,14 +1,16 @@
 package basil.parser
 
 import basil.data._
-import basil.typeclass.{Cons, JsRepr, TakeOne}
 import basil.typeclass.TakeOne._
-import cats.MonadError
+import basil.typeclass.{Cons, TakeOne}
 import cats.instances.char._
 import cats.kernel.Monoid
 import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import cats.{MonadError, ~>}
+
+import scala.language.postfixOps
 
 /**
   * Core abstraction of the library
@@ -20,21 +22,18 @@ import cats.syntax.functor._
   * By trying to extract the exact data needed, it avoids creating
   * intermediate data structure
   */
-abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
-                                          ME: MonadError[Source, ParseFailure],
-                                          Monoid: Monoid[Source[Char]],
-                                          Cons: Cons[Source],
-                                          jsReps: JsRepr[JVal]) {
+abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
+                                    ME: MonadError[Source, ParseFailure],
+                                    Monoid: Monoid[Source[Char]],
+                                    Cons: Cons[Source]) {
 
   type CharSource = Source[Char]
 
-  import jsReps._
-
-  type Parse = Vector[PPath] => CharSource => Source[(JVal, CharSource)]
+  type Parse[I] = Vector[PPath] => CharSource => Source[(I, CharSource)]
 
   type Pipe = CharSource => CharSource
 
-  val parseString: Parse = { implicit path => src =>
+  val parseString: Parse[String] = { implicit path => src =>
     skipWS(src).take1
       .flatMap {
         case ('"', next) => accJsString(next)
@@ -43,20 +42,20 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
             ParseFailure(s"""String should starts with ", but found $other""", path))
       }
       .map {
-        case (acc, next) => str(acc.mkString) -> next
+        case (acc, next) => acc.mkString -> next
       }
   }
-  val parseBoolean: Parse = { implicit path => src =>
+  val parseBoolean: Parse[Boolean] = { implicit path => src =>
     val withoutWS = skipWS(src)
     withoutWS.isFollowedBy("true".toCharArray.toList).flatMap {
       case (isTrue, next) =>
         if (isTrue) {
-          ME.pure(bool(true) -> next)
+          ME.pure(true -> next)
         } else {
           withoutWS.isFollowedBy("false".toCharArray.toList).flatMap {
             case (isFalse, next) =>
               if (isFalse) {
-                ME.pure(bool(false) -> next)
+                ME.pure(false -> next)
               } else {
                 ME.raiseError(ParseFailure("Expecting either `true` or `false`", path))
               }
@@ -77,7 +76,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     * @param terminator to indicate what character terminates the number
     * @return
     */
-  def parseNumber(terminator: ExpectedTerminator): Parse = { implicit path => s =>
+  def parseNumber(terminator: ExpectedTerminator): Parse[Double] = { implicit path => s =>
     parseNum1(skipWS(s))(terminator)
       .flatMap {
         case Part1(p1, Some(sep1), next) =>
@@ -95,11 +94,11 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
         case Part1(p1, None, next) => ME.pure(p1 -> next)
       }
       .map {
-        case (numChars, next) => num(numChars.mkString.toDouble) -> next
+        case (numChars, next) => numChars.mkString.toDouble -> next
       }
   }
-  def parseArrayItem(n: Int, next: Parse): Parse = { implicit path => s =>
-    def recurse(left: Int): Parse = { implicit path => stream =>
+  def parseArrayItem[I](n: Int, next: Parse[I]): Parse[I] = { implicit path => s =>
+    def recurse(left: Int): Parse[I] = { implicit path => stream =>
       if (left == 0) {
         next(path)(skipWS(stream))
       } else {
@@ -114,7 +113,7 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
       case (u, _)      => ME.raiseError(ParseFailure("[", u.toString, path \ n))
     }
   }
-  def parseObj(k: String, nextOp: Parse): Parse = { implicit path => stream =>
+  def parseObj[I](k: String, nextOp: Parse[I]): Parse[I] = { implicit path => stream =>
     def skipUntilKey(implicit path: Vector[PPath]): Pipe = { s =>
       parseObjKey(s).take1.flatMap[Char] {
         case ((key, nextS), _) if key == k => nextS
@@ -387,16 +386,24 @@ abstract class JsonParse[Source[_], JVal](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  val parsing: ParseOps[Parse] => Parse = {
-    case GetString         => parseString
-    case GetBool           => parseBoolean
-    case GetNum(t)         => parseNumber(t)
-    case GetN(n, next)     => parseArrayItem(n, next)
-    case GetKey(key, next) => parseObj(key, next)
-    case GetNullable(ops) =>
-      path => in =>
-        ops(path ?)(in).handleErrorWith { _ =>
-          ME.pure(Null -> in)
-        }
+  private def parseNullable[I](ops: Parse[I]): Parse[Option[I]] = { path => in =>
+    ops(path ?)(in)
+      .map[(Option[I], CharSource)] {
+        case (i, src) => Some(i) -> src
+      }
+      .handleErrorWith(_ => ME.pure(None -> in))
+  }
+
+  def parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
+    override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
+      fa match {
+        case GetString              => parseString
+        case GetBool                => parseBoolean
+        case GetNum(t)              => parseNumber(t)
+        case getN: GetN[Parse, i]   => parseArrayItem(getN.n, getN.next)
+        case getK: GetKey[Parse, i] => parseObj(getK.key, getK.next)
+        case GetNullable(ops)       => parseNullable(ops)
+      }
+    }
   }
 }

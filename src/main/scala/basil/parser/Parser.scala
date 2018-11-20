@@ -1,7 +1,7 @@
 package basil.parser
 
 import basil.data._
-import schemes.{Fix, Schemes}
+import ParseOps.ParseOpsHFunctor
 
 object Parser {
 
@@ -15,9 +15,9 @@ object Parser {
     * @tparam JV User supplied Json AST type
     * @return
     */
-  def parseJS[Source[_], JV](expr: Fix[ParseOps], src: Source[Char])(
-      implicit parse: JsonParse[Source, JV]): Source[(JV, parse.CharSource)] = {
-    Schemes.cata(expr)(parse.parsing).apply(Vector.empty)(src)
+  def parseJS[Source[_], I](expr: HFix[ParseOps, I], src: Source[Char])(
+      implicit parse: JsonParse[Source]): Source[(I, parse.CharSource)] = {
+    HFix.cata[ParseOps, I, parse.Parse](expr, parse.parsing).apply(Vector.empty)(src)
   }
 }
 
