@@ -2,7 +2,7 @@ package basil.parser
 
 import basil.data.ParseOpsConstructor._
 import basil.data._
-import cats.Functor
+import cats.{Functor, ~>}
 import cats.syntax.functor._
 import org.json4s.JsonDSL._
 import org.json4s._
@@ -76,7 +76,7 @@ abstract class ParseSpec[F[_]: Functor]
         case (obj, expected) =>
           val jsonStr = pretty(render(obj)).toCharArray
 
-          val ops     = Start[String].getKey("myKey").getN(2).getString.t
+          val ops     = Start.getKey("myKey").getN(2).getString.t
           val decoded = parseJSStream(ops, liftF(jsonStr)).getVal
           decoded mustBe expected.values
       }
@@ -86,15 +86,15 @@ abstract class ParseSpec[F[_]: Functor]
         case (ops, js, extracted) =>
           val jsStr = pretty(render(js)).toCharArray
 
-          val decoded = parseJSStream(HFix(ops), liftF(jsStr)).getVal
+          val decoded = parseJSStream(ops, liftF(jsStr)).getVal
 
-          decoded mustBe extracted.values
+          decoded mustBe extracted
       }
     }
     "parse partial array" in new PContext[F] {
       val arr: JArray  = List(2, 3, 10, 20, 31)
       val partialJsStr = pretty(render(arr)).toCharArray.dropRight(6)
-      val ops          = Start[Double].getN(2).getNum.t
+      val ops          = Start.getN(2).getNum.t
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
 
@@ -109,7 +109,7 @@ abstract class ParseSpec[F[_]: Functor]
       )
 
       val partialJsStr = pretty(render(obj)).toCharArray.dropRight(15)
-      val ops          = Start[String].getKey("").getKey("really?").getString.t
+      val ops          = Start.getKey("").getKey("really?").getString.t
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
       decoded mustBe "nope"
@@ -125,12 +125,12 @@ private abstract class PContext[F[_]](implicit val parser: JsonParse[F]) {
 }
 
 trait ParserGen {
-  type OpTree[I] = ParseOps[HFix[ParseOps, ?], I]
+  type OpTree[I] = HFix[ParseOps, I]
 
-  private def endingOpGen: Gen[ExpectedTerminator => ParseOps[Nothing, _]] = {
-    val s: ExpectedTerminator => ParseOps[Nothing, String]  = _ => GetString
-    val n: ExpectedTerminator => ParseOps[Nothing, Double]  = x => GetNum(x)
-    val b: ExpectedTerminator => ParseOps[Nothing, Boolean] = _ => GetBool
+  private def endingOpGen: Gen[ExpectedTerminator => OpTree[_]] = {
+    val s: ExpectedTerminator => OpTree[String]  = _ => HFix[ParseOps, String](GetString)
+    val n: ExpectedTerminator => OpTree[Double]  = x => HFix[ParseOps, Double](GetNum(x))
+    val b: ExpectedTerminator => OpTree[Boolean] = _ => HFix[ParseOps, Boolean](GetBool)
 
     Gen.oneOf(s, n, b)
   }
@@ -146,8 +146,8 @@ trait ParserGen {
       endingOp <- gen
       n        <- Gen.choose(0, 5)
       key      <- Gen.alphaStr.filter(_.nonEmpty)
-      op <- Gen.oneOf[OpTree[_]](GetN(n, HFix(endingOp(OneOf(Bracket, Comma)))),
-                                 GetKey(key, HFix(endingOp(OneOf(Comma, CurlyBrace)))))
+      op <- Gen.oneOf[OpTree[_]](HFix(GetN(n, endingOp(OneOf(Bracket, Comma)))),
+                                 HFix(GetKey(key, endingOp(OneOf(Comma, CurlyBrace)))))
     } yield { _: ExpectedTerminator =>
       op
     }
@@ -168,10 +168,10 @@ trait ParserGen {
 
   }
 
-  def opsJsGen(depth: Int): Gen[(OpTree[_], JValue, JValue)] = {
+  def opsJsGen(depth: Int): Gen[(OpTree[_], JValue, Any)] = {
     for {
       ops                 <- opsGen(depth)
-      (jValue, extracted) <- jsGen(ops)
+      (jValue, extracted) <- genJs(ops)
     } yield (ops, jValue, extracted)
   }
 
@@ -182,15 +182,26 @@ trait ParserGen {
     *         _._1 is the nested JsValue
     *         _._2 is the drilldown value that should be extracted by our parsing
     */
-  def jsGen[I](op: OpTree[I]): Gen[(JValue, JValue)] = {
-    op match {
-      case GetString         => jstrGen.branch
-      case GetNum(_)         => jnumGen.branch
-      case GetBool           => Gen.oneOf(JBool.False, JBool.True).branch
-      case GetN(n, next)     => jsArrGen(n, jsGen(next.unfix))
-      case GetKey(key, next) => jsObjGen(key, jsGen(next.unfix))
+  type ObjExpectedGen[E] = Gen[(JValue, E)]
+
+  def genJs[I](expr: HFix[ParseOps, I]): ObjExpectedGen[I] =
+    HFix.cata[ParseOps, I, ObjExpectedGen](expr, gen)
+
+  val boolGen = Gen.oneOf(JBool.False, JBool.True)
+
+  val gen: ParseOps[ObjExpectedGen, ?] ~> ObjExpectedGen =
+    new (ParseOps[ObjExpectedGen, ?] ~> ObjExpectedGen) {
+      override def apply[A](fa: ParseOps[ObjExpectedGen, A]): ObjExpectedGen[A] = {
+        fa match {
+          case GetString         => jstrGen.map(x => x -> x.values)
+          case GetNum(_)         => jnumGen.map(x => x -> x.values)
+          case GetBool           => boolGen.map(x => x -> x.values)
+          case GetN(n, next)     => jsArrGen(n, next)
+          case GetKey(key, next) => jsObjGen(key, next)
+          case GetMultiple(_)    => ???
+        }
+      }
     }
-  }
 
   private val specialChar = Gen.oneOf("\\b", "\\r", "\\f", "\\\\", "\\/")
 
@@ -214,14 +225,13 @@ trait ParserGen {
     b <- Gen.oneOf(true, false)
   } yield JBool(b)
 
-  def jsObjGen(key: String, gen: Gen[(JValue, JValue)]): Gen[(JObject, JValue)] = {
+  def jsObjGen[A](key: String, gen: ObjExpectedGen[A]): ObjExpectedGen[A] = {
     for {
       n                   <- Gen.choose(2, 8)
       obj                 <- randomObj(n)
       (nested, drillDown) <- gen
     } yield {
       val merged = (key -> nested) :: obj.obj
-
       JObject(merged) -> drillDown
     }
   }
@@ -252,7 +262,7 @@ trait ParserGen {
     )
   }
 
-  def jsArrGen(n: Int, gen: Gen[(JValue, JValue)]) = {
+  def jsArrGen[A](n: Int, gen: ObjExpectedGen[A]): ObjExpectedGen[A] = {
     for {
       list               <- Gen.listOfN(n + 1, randomJsGen)
       (target, finalVal) <- gen

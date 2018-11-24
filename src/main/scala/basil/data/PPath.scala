@@ -36,7 +36,7 @@ object PPath {
   implicit val pathShow: Show[PPath] = {
     case KeyPath(key) => s"""["$key"]"""
     case IndexPath(i) => s"[$i]"
-    case Nullable => "?"
+    case Nullable     => "?"
   }
 
   implicit class PathOps(p: Vector[PPath]) {

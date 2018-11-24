@@ -1,6 +1,8 @@
 package basil.data
+import cats.free.FreeApplicative
 
 object ParseOpsConstructor {
+  type ParseTree[I] = HFix[ParseOps, I]
 
   /**
     * Syntatic sugar to support creating nested ParseOps structure
@@ -8,51 +10,55 @@ object ParseOpsConstructor {
     *
     * todo: how much overhead does this adds?
     */
-  implicit class ContinuableBy[I](val c: Continuable[ParseOps, I]) extends AnyVal {
-
-    def getNum(implicit eq: I =:= Double): ExprEnd[ParseOps, I] = {
-      val _ = eq
-      ExprEnd(c.cont(HFix[ParseOps, Double](GetNum(c.terminator)).asInstanceOf[HFix[ParseOps, I]]))
+  implicit class PartialContBy(val c: PartialCont[ParseOps]) extends AnyVal {
+    def getNum: ExprEnd[ParseOps, Double] = {
+      val applied = c[Double]
+      ExprEnd(applied.cont(HFix[ParseOps, Double](GetNum(applied.terminator))))
+    }
+    def getString: ExprEnd[ParseOps, String] = {
+      val applied = c[String]
+      ExprEnd[ParseOps, String](applied.cont(HFix[ParseOps, String](GetString)))
     }
 
-    def getString(implicit eq: I =:= String): ExprEnd[ParseOps, I] = {
-      val _ = eq
-      ExprEnd[ParseOps, I](
-        c.cont(HFix[ParseOps, String](GetString).asInstanceOf[HFix[ParseOps, I]]))
+    def getBool: ExprEnd[ParseOps, Boolean] = {
+      val applied = c[Boolean]
+      ExprEnd(applied.cont(HFix[ParseOps, Boolean](GetBool)))
     }
 
-    def getBool(implicit eq: I =:= Boolean): ExprEnd[ParseOps, I] = {
-      val _ = eq
-      ExprEnd(c.cont(HFix[ParseOps, Boolean](GetBool).asInstanceOf[HFix[ParseOps, I]]))
-    }
-
-    def getKey(key: String): Continuable[ParseOps, I] = {
-      val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
-        HFix(GetKey(key, next))
+    def getKey(key: String): PartialCont[ParseOps] = {
+      new PartialCont[ParseOps] {
+        override def apply[I]: Continuable[ParseOps, I] = {
+          val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
+            HFix(GetKey(key, next))
+          }
+          Continuable(cont.andThen(c[I].cont), OneOf(Comma, CurlyBrace))
+        }
       }
-
-      Continuable(cont.andThen(c.cont), OneOf(Comma, CurlyBrace))
     }
 
-    def getN(n: Int): Continuable[ParseOps, I] = {
-      val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
-        HFix(GetN(n, next))
+    def getN(n: Int): PartialCont[ParseOps] = {
+      new PartialCont[ParseOps] {
+        override def apply[I]: Continuable[ParseOps, I] = {
+          val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
+            HFix(GetN(n, next))
+          }
+          Continuable(cont.andThen(c[I].cont), OneOf(Comma, Bracket))
+        }
       }
-
-      Continuable(cont.andThen(c.cont), OneOf(Comma, Bracket))
     }
 
-//    todo: how to handle Nullable ?
-//    def getNullable: Continuable[ParseOps, I] = {
-//      val cont: HFix[ParseOps, I] => HFix[ParseOps, I] = { next =>
-//        HFix(GetNullable(next))
-//      }
-//
-//      Continuable(cont.andThen(c.cont), c.terminator)
-//    }
+    def getAll[F[_], T](alls: FreeApplicative[ParseOps[ParseTree, ?], T]): ExprEnd[ParseOps, T] = {
+      ExprEnd(c[T].cont(HFix[ParseOps, T](GetMultiple(alls))))
+    }
   }
 
-  def Start[I]: Continuable[ParseOps, I] = Continuable[ParseOps, I](identity, End)
+  val Start: PartialCont[ParseOps] = new PartialCont[ParseOps] {
+    override def apply[I]: Continuable[ParseOps, I] = Continuable[ParseOps, I](identity, End)
+  }
+}
+
+trait PartialCont[A[_[_], _]] {
+  def apply[I]: Continuable[A, I]
 }
 
 sealed trait ExprTree[A[_[_], _]]

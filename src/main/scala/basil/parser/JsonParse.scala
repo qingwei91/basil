@@ -3,11 +3,12 @@ package basil.parser
 import basil.data._
 import basil.typeclass.TakeOne._
 import basil.typeclass.{Cons, TakeOne}
+import cats.free.FreeApplicative
 import cats.instances.char._
 import cats.kernel.Monoid
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-import cats.{MonadError, ~>}
+import cats.{Applicative, MonadError, ~>}
 
 /**
   * Core abstraction of the library
@@ -165,14 +166,17 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
       val wasEscaped = !lastCharIsSpecial && acc.lastOption.contains('\\')
 
       s.take1.flatMap {
-        case ('"', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '"', true)
-        case ('/', next) if wasEscaped  => recurse(next)(acc.dropRight(1) :+ '/', true)
-        case ('b', next) if wasEscaped  => recurse(next)(acc :+ 'b', true)
-        case ('f', next) if wasEscaped  => recurse(next)(acc :+ 'f', true)
-        case ('n', next) if wasEscaped  => recurse(next)(acc :+ 'n', true)
-        case ('r', next) if wasEscaped  => recurse(next)(acc :+ 'r', true)
-        case ('t', next) if wasEscaped  => recurse(next)(acc :+ 't', true)
-        case ('\\', next) if wasEscaped => recurse(next)(acc.dropRight(1) :+ '\\', true)
+        case ('"', next) if wasEscaped =>
+          recurse(next)(acc.dropRight(1) :+ '"', true)
+        case ('/', next) if wasEscaped =>
+          recurse(next)(acc.dropRight(1) :+ '/', true)
+        case ('b', next) if wasEscaped => recurse(next)(acc :+ 'b', true)
+        case ('f', next) if wasEscaped => recurse(next)(acc :+ 'f', true)
+        case ('n', next) if wasEscaped => recurse(next)(acc :+ 'n', true)
+        case ('r', next) if wasEscaped => recurse(next)(acc :+ 'r', true)
+        case ('t', next) if wasEscaped => recurse(next)(acc :+ 't', true)
+        case ('\\', next) if wasEscaped =>
+          recurse(next)(acc.dropRight(1) :+ '\\', true)
         case (oops, _) if wasEscaped =>
           ME.raiseError(ParseFailure(s"Illegal escape sequence \\$oops", path))
         case ('"', next) => ME.pure(acc -> next)
@@ -216,7 +220,8 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
       case (sign(_), next)  => skipNum(term)(path)(next)
       case ('[', next)      => skipArr(path)(next)
       case ('{', next)      => skipObject(path)(next)
-      case (unexp, _)       => ME.raiseError(ParseFailure("One of(t, f, [, {)", unexp.toString, path))
+      case (unexp, _) =>
+        ME.raiseError(ParseFailure("One of(t, f, [, {)", unexp.toString, path))
     }
   }
 
@@ -259,7 +264,8 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
             }
         }
 
-      case (uexp, _) => ME.raiseError(ParseFailure("\" to start a key", uexp.toString, path))
+      case (uexp, _) =>
+        ME.raiseError(ParseFailure("\" to start a key", uexp.toString, path))
     }
   }
 
@@ -271,7 +277,8 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
         skipWS(skippedOne).peek1.flatMap {
           case (',', next) => skipKVPair(path)(next.drop1)
           case ('}', next) => next
-          case (uexp, _)   => ME.raiseError(ParseFailure(", or }", uexp.toString, path))
+          case (uexp, _) =>
+            ME.raiseError(ParseFailure(", or }", uexp.toString, path))
         }
     }
   }
@@ -281,9 +288,11 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
       case ('{', next) =>
         skipKVPair(path)(next).take1.flatMap[Char] {
           case ('}', next) => next
-          case (uexp, _)   => ME.raiseError(ParseFailure("}", uexp.toString, path))
+          case (uexp, _) =>
+            ME.raiseError(ParseFailure("}", uexp.toString, path))
         }
-      case (uexp, _) => ME.raiseError[Char](ParseFailure("{", uexp.toString, path))
+      case (uexp, _) =>
+        ME.raiseError[Char](ParseFailure("{", uexp.toString, path))
     }
   }
   private def parseSign(s: CharSource): Source[(Option[Char], CharSource)] = {
@@ -310,7 +319,8 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
       f: CharSource => Source[A])(implicit p: Vector[PPath]): Source[A] = {
     skipWS(s).take1.flatMap {
       case (t, _) if term.matchChar(t) => f(s)
-      case (uexp, _)                   => ME.raiseError(ParseFailure(term.toString, uexp.toString, p))
+      case (uexp, _) =>
+        ME.raiseError(ParseFailure(term.toString, uexp.toString, p))
     }
   }
 
@@ -325,7 +335,8 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case ('e', next)                 => ME.pure(Part1(acc, Some('e'), next))
         case (whitespace(_), next) =>
           consumeTillTermination(next)(term, n => ME.pure(Part1(acc, None, n)))
-        case (u, _) => ME.raiseError[Part1](ParseFailure(s"Digit or $term", u.toString, p))
+        case (u, _) =>
+          ME.raiseError[Part1](ParseFailure(s"Digit or $term", u.toString, p))
       } {
         if (term == End && acc.nonEmpty) {
           ME.pure(Part1(acc, None, Monoid.empty))
@@ -343,12 +354,14 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
       implicit p: Vector[PPath]): Source[Part2] = {
     def recurse(acc: Vector[Char], s: CharSource): Source[Part2] = {
       s.take1Opt.flatFold {
-        case (digit(d), next)                    => recurse(acc :+ d, next)
-        case (t, _) if term.matchChar(t)         => ME.pure(Part2(acc, None, s))
-        case (exponent(e), next) if p1Sep == '.' => ME.pure(Part2(acc, Some(e), next))
+        case (digit(d), next)            => recurse(acc :+ d, next)
+        case (t, _) if term.matchChar(t) => ME.pure(Part2(acc, None, s))
+        case (exponent(e), next) if p1Sep == '.' =>
+          ME.pure(Part2(acc, Some(e), next))
         case (whitespace(_), next) =>
           consumeTillTermination(next)(term, n => ME.pure(Part2(acc, None, n)))
-        case (u, _) => ME.raiseError[Part2](ParseFailure(s"Digit or $term", u.toString, p))
+        case (u, _) =>
+          ME.raiseError[Part2](ParseFailure(s"Digit or $term", u.toString, p))
       } {
         if (term == End && acc.nonEmpty) {
           ME.pure(Part2(acc, None, Monoid.empty))
@@ -366,7 +379,8 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
       s.take1Opt.flatFold {
         case (digit(d), next)            => recurse(acc :+ d, next)
         case (t, _) if term.matchChar(t) => ME.pure(acc -> s)
-        case (whitespace(_), next)       => consumeTillTermination(next)(term, n => ME.pure(acc -> n))
+        case (whitespace(_), next) =>
+          consumeTillTermination(next)(term, n => ME.pure(acc -> n))
         case (u, _) =>
           ME.raiseError[(Vector[Char], CharSource)](
             ParseFailure(s"Digit or $term", u.toString, path))
@@ -383,7 +397,27 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  def parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
+  private implicit val ParseApp: Applicative[Parse] = new Applicative[Parse] {
+    override def pure[A](x: A): Parse[A] = { path => src =>
+      ME.pure(x -> src)
+    }
+    override def ap[A, B](ff: Parse[A => B])(fa: Parse[A]): Parse[B] = { path => src =>
+      for {
+        pair1     <- ff(path)(src)
+        (a2b, _)  = pair1
+        pair2     <- fa(path)(src)
+        (a, rest) = pair2
+      } yield {
+        a2b(a) -> rest
+      }
+    }
+  }
+
+  private def parseProduct[I](all: FreeApplicative[ParseOps[Parse, ?], I]): Parse[I] = {
+    all.foldMap(parsing)
+  }
+
+  val parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
     override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
       fa match {
         case GetString              => parseString
@@ -391,6 +425,7 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case GetNum(t)              => parseNumber(t)
         case getN: GetN[Parse, i]   => parseArrayItem(getN.n, getN.next)
         case getK: GetKey[Parse, i] => parseObj(getK.key, getK.next)
+        case GetMultiple(all)       => parseProduct(all)
       }
     }
   }
