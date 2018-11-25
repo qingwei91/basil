@@ -1,8 +1,10 @@
 package basil.data
 import cats.free.FreeApplicative
+import cats.free.FreeApplicative.lift
 
 object ParseOpsConstructor {
-  type ParseTree[I] = HFix[ParseOps, I]
+  type ParseTree[I]      = HFix[ParseOps, I]
+  type ParsOpsF[F[_], I] = FreeApplicative[ParseOps[F, ?], I]
 
   /**
     * Syntatic sugar to support creating nested ParseOps structure
@@ -47,7 +49,7 @@ object ParseOpsConstructor {
       }
     }
 
-    def getAll[F[_], T](alls: FreeApplicative[ParseOps[ParseTree, ?], T]): ExprEnd[ParseOps, T] = {
+    def getAll[F[_], T](alls: ParsOpsF[ParseTree, T]): ExprEnd[ParseOps, T] = {
       ExprEnd(c[T].cont(HFix[ParseOps, T](GetMultiple(alls))))
     }
   }
@@ -55,6 +57,18 @@ object ParseOpsConstructor {
   val Start: PartialCont[ParseOps] = new PartialCont[ParseOps] {
     override def apply[I]: Continuable[ParseOps, I] = Continuable[ParseOps, I](identity, End)
   }
+
+  def getNum[F[_]]: ParsOpsF[F, Double] =
+    lift[ParseOps[F, ?], Double](GetNum(End))
+
+  def getString[F[_]]: ParsOpsF[F, String] =
+    lift[ParseOps[F, ?], String](GetString)
+
+  def getBool[F[_]]: ParsOpsF[F, Boolean] =
+    lift[ParseOps[F, ?], Boolean](GetBool)
+
+  def getKey[F[_], I](key: String, next: F[I]): ParsOpsF[F, I] =
+    lift[ParseOps[F, ?], I](GetKey(key, next))
 }
 
 trait PartialCont[A[_[_], _]] {
