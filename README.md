@@ -4,11 +4,15 @@
 
 A json `Decoder` that can extract data from partial, incomplete json.
 
-Right now it supports parsing json from `fs2.Stream[IO, Char]` and `List[Char]`
-
 Json from `Array[Char]` is not supported now because Array cannot form a Monad trivially, one could convert `Array[Char]` to `List[Char]` for now.
 
 **Warning**: This library is not production ready yet as I haven't done any benchmarking.
+
+### Features
+
+* Extract data from partial json, eg. `fs2.Stream[Char]`
+* No intermediate json ast, eg. you get `"mystring"` instead of `JString("mystring")`
+* Composable parse tree, eg. `GetString + GetNum => GetStringAndNum`
 
 ### Example
 
@@ -29,6 +33,10 @@ val result = Parser.parseJS(parseOps, completeJS.toCharArray.toList).head.map(_.
 result == 2020.111
 
 ```
+
+### How to compose ParseOps?
+
+todo!!
 
 ### How it works
 
@@ -71,6 +79,7 @@ I recommend watching this [video](https://www.youtube.com/watch?v=oRLkb6mqvVM) i
 
 ### Next
 
+* Split fs2 into separate module
 * Better error message
 * Support extract data as Sequence
 * Support auto decoding of case classes
