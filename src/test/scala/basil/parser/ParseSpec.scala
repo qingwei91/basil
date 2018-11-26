@@ -135,5 +135,5 @@ private abstract class PContext[F[_]](implicit val parser: JsonParse[F]) {
   implicit val path: Vector[PPath] = Vector.empty
 
   def parseJSStream[I](ops: HFix[ParseOps, I], s: F[Char]): F[(I, F[Char])] =
-    Parser.parseJS[F, I](ops, s)(parser)
+    Parser.parseSource[F, I](ops, s)(parser)
 }

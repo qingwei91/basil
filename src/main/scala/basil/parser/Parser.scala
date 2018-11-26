@@ -2,6 +2,9 @@ package basil.parser
 
 import basil.data._
 import ParseOps.ParseOpsHFunctor
+import basil.typeclass.EffStack
+
+import scala.util.{Failure, Success, Try}
 
 object Parser {
 
@@ -15,10 +18,27 @@ object Parser {
     * @tparam JV User supplied Json AST type
     * @return
     */
-  def parseJS[Source[_], I](expr: HFix[ParseOps, I], src: Source[Char])(
+  def parseSource[Source[_], I](expr: HFix[ParseOps, I], src: Source[Char])(
       implicit parse: JsonParse[Source]): Source[(I, parse.CharSource)] = {
-    HFix.cata[ParseOps, I, parse.Parse](expr, parse.parsing).apply(Vector.empty)(src)
+    HFix.cata[ParseOps, I, parse.Parse](expr, parse.parsing).apply(initPath)(src)
   }
+
+  // this method might be ineffcient, benchmark needed
+  def parseString[I](expr: HFix[ParseOps, I], src: String)(
+      implicit parse: JsonParse[EffStack[Try, List, ?]]): Try[I] = {
+    HFix
+      .cata[ParseOps, I, parse.Parse](expr, parse.parsing)
+      .apply(initPath)(Success(src.toList))
+      .flatMap {
+        _.headOption
+          .map(_._1)
+          .fold[Try[I]](Failure(ParseFailure.termination(initPath)))(
+            i => Success(i)
+          )
+      }
+  }
+
+  val initPath = Vector.empty[PPath]
 }
 
 object digit {

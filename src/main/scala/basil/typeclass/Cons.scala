@@ -23,9 +23,9 @@ object Cons {
   implicit val ListCons: Cons[List] = new Cons[List] {
     override def cons[E](cols: List[E], e: E): List[E] = e :: cols
   }
-  implicit def stackCons[E[_]: Functor, F[_]: Cons]: Cons[EStack[E, F, ?]] =
-    new Cons[EStack[E, F, ?]] {
-      override def cons[I](cols: EStack[E, F, I], e: I): EStack[E, F, I] = {
+  implicit def stackCons[E[_]: Functor, F[_]: Cons]: Cons[EffStack[E, F, ?]] =
+    new Cons[EffStack[E, F, ?]] {
+      override def cons[I](cols: EffStack[E, F, I], e: I): EffStack[E, F, I] = {
         Functor[E].map(cols) { fa =>
           Cons[F].cons(fa, e)
         }

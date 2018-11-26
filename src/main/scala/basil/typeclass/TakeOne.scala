@@ -117,10 +117,10 @@ object TakeOne extends TakeOneSyntax {
     }
   }
 
-  implicit def stackTakeOne[E[_]: Applicative, F[_]: TakeOne: Functor]: TakeOne[EStack[E, F, ?]] =
-    new TakeOne[EStack[E, F, ?]] {
+  implicit def stackTakeOne[E[_]: Applicative, F[_]: TakeOne: Functor]: TakeOne[EffStack[E, F, ?]] =
+    new TakeOne[EffStack[E, F, ?]] {
       override def take1[Element](
-          src: EStack[E, F, Element]): EStack[E, F, (Element, EStack[E, F, Element])] = {
+          src: EffStack[E, F, Element]): EffStack[E, F, (Element, EffStack[E, F, Element])] = {
         Functor[E].map(src) { fa =>
           TakeOne[F].take1(fa).map {
             case (e, fe) => e -> Applicative[E].pure(fe)
@@ -129,7 +129,7 @@ object TakeOne extends TakeOneSyntax {
       }
 
       override def take1Opt[Element](
-          src: EStack[E, F, Element]): EStack[E, F, (Option[Element], EStack[E, F, Element])] = {
+          src: EffStack[E, F, Element]): EffStack[E, F, (Option[Element], EffStack[E, F, Element])] = {
         Functor[E].map(src) { fa =>
           TakeOne[F].take1Opt(fa).map {
             case (e, fe) => e -> Applicative[E].pure(fe)
