@@ -6,9 +6,9 @@ A json `Decoder` that can extract data from partial, incomplete json.
 
 Right now it supports parsing json from `fs2.Stream[IO, Char]` and `List[Char]`
 
-Support of `Array[Char]` (which is likely the most common usecase) is planned, but not implemented yet.
+Json from `Array[Char]` is not supported now because Array cannot form a Monad trivially, one could convert `Array[Char]` to `List[Char]` for now.
 
-**Warning**: This library is likely buggy and not completely comply to JSON specification as of now
+**Warning**: This library is not production ready yet as I haven't done any benchmarking.
 
 ### Example
 
@@ -26,13 +26,32 @@ val parseOps = Start.getKey("key2").getNum.t
 
 val result = Parser.parseJS(parseOps, completeJS.toCharArray.toList).head.map(_._1)
 
-result == JDouble(2020.111)
+result == 2020.111
 
 ```
 
 ### How it works
 
-The main idea is to define the data you want from the json as as a ParseOps, which is a GADT that can be recursive by using `Fix`.
+The main idea is to define the data you want from the json as a ParseOps, which is a GADT that can be recursive by using `HFix`.
+
+There's some helper in `ParseOpsConstructor` to allow creating a tree that describe the data you need without having to fiddle with `HFix`
+
+```scala
+import basil.parser.Parser
+import basil.parser.implicits._
+import basil.data.ParseOpsConstructor._
+
+val jsString = s"""{ "name" : { "first": "Pika", "last": "chu" } }"""
+
+
+val getName = Start.getKey("name")
+
+val getFirstName = getName.getKey("first").getString
+val getLastName = getName.getKey("last").getString
+
+Parser.parseString(getFirstName, jsString)  // Success("Pika")
+Parser.parseString(getLastName, jsString)  // Success("chu")
+```
 
 Once we know the exact data we need, we can only parse things we need and ignore the rest (to a certain degree.)
 
@@ -42,16 +61,18 @@ For example, given a json
 
 if we only need the 2nd element, we don't care the type of 3rd element and so on, we don't even have to make sure the json is valid, as long as we can get the 2nd element.
 
-All parsing logic lives in `basil.parser.JsonParse`, I tried to be generic here, so the core logic can work on any Json ADT and any raw data type as long as it implements the typeclassed needed.
+All parsing logic lives in `basil.parser.JsonParse`, I tried to be generic here, so the core logic can work with any input type as long as they can implement the typeclass required
 
+### Acknowledgement
+
+This project get a lot of idea from https://github.com/nuttycom/xenomorph, it shows how to retain an extra type parameter with structure that is similar to `Fix`.
+
+I recommend watching this [video](https://www.youtube.com/watch?v=oRLkb6mqvVM) if you are interested
 
 ### Next
 
 * Better error message
-* Support Array[Char]
+* Support extract data as Sequence
 * Support auto decoding of case classes
-* Stack safety
 * Benchmark
-* Consider support serialization?
-
-
+* Document how HFix and HFunctor work
