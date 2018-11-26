@@ -1,15 +1,10 @@
 package basil.typeclass
 
-import java.util
-
-import basil.typeclass.instances.TryList
 import cats.effect.IO
 import cats.syntax.eq._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-import cats.{Eq, Functor, Monad}
-
-import scala.util.{Success, Try}
+import cats.{Applicative, Eq, Functor, Monad}
 
 /**
   * Typeclass to provide capability of taking 1 element from a data
@@ -87,6 +82,8 @@ trait TakeOneSyntax {
 object TakeOne extends TakeOneSyntax {
   import fs2.{Pull, Stream}
 
+  def apply[F[_]](implicit t: TakeOne[F]): TakeOne[F] = t
+
   implicit def streamTakeOne: TakeOne[Stream[IO, ?]] =
     new TakeOne[Stream[IO, ?]] {
       override def take1[C](src: Stream[IO, C]): Stream[IO, (C, Stream[IO, C])] = {
@@ -103,85 +100,43 @@ object TakeOne extends TakeOneSyntax {
         }.stream
     }
 
-  implicit val arrayTakeOne: TakeOne[Array] = new TakeOne[Array] {
-    override def take1[Element](src: Array[Element]): Array[(Element, Array[Element])] = {
+  implicit val listTakeOne: TakeOne[List] = new TakeOne[List] {
 
-      if (src.length > 0) {
-        val tail = util.Arrays
-          .asList(src: _*)
-          .subList(1, src.length)
-          .toArray
-          .asInstanceOf[Array[Element]]
-
-        Array.apply(src(0) -> tail)
-      } else {
-        new Array[(Element, Array[Element])](0)
+    override def take1[Element](src: List[Element]): List[(Element, List[Element])] = {
+      src match {
+        case h :: t => List(h -> t)
+        case Nil    => Nil
       }
     }
 
-    override def take1Opt[Element](
-        src: Array[Element]): Array[(Option[Element], Array[Element])] = {
-      if (src.length > 0) {
-        val tail = util.Arrays
-          .asList(src: _*)
-          .subList(1, src.length)
-          .toArray
-          .asInstanceOf[Array[Element]]
-
-        Array.fill(1)(Some(src(0)) -> tail)
-      } else {
-        Array.apply(None -> Array().asInstanceOf[Array[Element]])
+    override def take1Opt[Element](src: List[Element]): List[(Option[Element], List[Element])] = {
+      src match {
+        case h :: t => List(Some(h) -> t)
+        case Nil    => List(None    -> Nil)
       }
     }
   }
 
-  type TryArray[A] = Try[Array[A]]
-  implicit val arrayTryTakeOne: TakeOne[TryArray] = new TakeOne[TryArray] {
-    override def take1[Element](src: TryArray[Element]): TryArray[(Element, TryArray[Element])] = {
-      src.map { arr =>
-        if (arr.length > 0) {
-          val tail = util.Arrays
-            .asList(arr: _*)
-            .subList(1, arr.length)
-            .toArray
-            .asInstanceOf[Array[Element]]
+  implicit def stackTakeOne[E[_]: Applicative, F[_]: TakeOne: Functor]: TakeOne[EStack[E, F, ?]] =
+    new TakeOne[EStack[E, F, ?]] {
+      override def take1[Element](
+          src: EStack[E, F, Element]): EStack[E, F, (Element, EStack[E, F, Element])] = {
+        Functor[E].map(src) { fa =>
+          TakeOne[F].take1(fa).map {
+            case (e, fe) => e -> Applicative[E].pure(fe)
+          }
+        }
+      }
 
-          Array.apply(arr(0) -> Success(tail))
-        } else {
-          new Array[(Element, TryArray[Element])](0)
+      override def take1Opt[Element](
+          src: EStack[E, F, Element]): EStack[E, F, (Option[Element], EStack[E, F, Element])] = {
+        Functor[E].map(src) { fa =>
+          TakeOne[F].take1Opt(fa).map {
+            case (e, fe) => e -> Applicative[E].pure(fe)
+          }
         }
       }
     }
-
-    override def take1Opt[Element](
-        src: TryArray[Element]): TryArray[(Option[Element], TryArray[Element])] = src.map { arr =>
-      if (arr.length > 0) {
-        val tail = util.Arrays
-          .asList(arr: _*)
-          .subList(1, arr.length)
-          .toArray
-          .asInstanceOf[Array[Element]]
-
-        Array.fill(1)(Some(arr(0)) -> Success(tail))
-      } else {
-        Array.apply(None -> Success(Array().asInstanceOf[Array[Element]]))
-      }
-    }
-  }
-
-  implicit val listTryTakeOne: TakeOne[instances.TryList] = new TakeOne[TryList] {
-    override def take1[Element](src: TryList[Element]): TryList[(Element, TryList[Element])] =
-      src.map {
-        case h :: tail => List(h -> Success(tail))
-        case Nil       => Nil
-      }
-
-    override def take1Opt[Element](
-        src: TryList[Element]): TryList[(Option[Element], TryList[Element])] = src.map {
-      case h :: tail => List(Some(h) -> Success(tail))
-      case Nil       => List(None    -> Success(Nil))
-    }
-  }
 }
 
 final class TakeOps[Element, Source[_]](src: Source[Element])(implicit take: TakeOne[Source],

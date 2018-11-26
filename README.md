@@ -47,7 +47,6 @@ All parsing logic lives in `basil.parser.JsonParse`, I tried to be generic here,
 
 ### Next
 
-* Solve problem of type widening with Fix (maybe Free will help?)
 * Better error message
 * Support Array[Char]
 * Support auto decoding of case classes

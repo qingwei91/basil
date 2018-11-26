@@ -5,10 +5,10 @@ import cats.instances.list._
 
 import scala.util.Success
 
-class ListParserSpec extends ParseSpec[TryList] {
-  override implicit val parser: JsonParse[TryList] = implicits.ListJsonParser
+class ListParserSpec extends ParseSpec[TryF[List, ?]] {
+  override implicit val parser: JsonParse[TryF[List, ?]] = implicits.ListJsonParser
 
-  override def liftF(charArr: Array[Char]): TryList[Char] = Success(List(charArr: _*))
+  override def liftF(charArr: Array[Char]): TryF[List, Char] = Success(List(charArr: _*))
 
-  override def getLast[A](f: TryList[A]): A = f.get.last
+  override def getLast[A](f: TryF[List, A]): A = f.get.last
 }

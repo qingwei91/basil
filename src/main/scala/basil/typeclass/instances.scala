@@ -2,8 +2,9 @@ package basil.typeclass
 
 import basil.data.ParseFailure
 import cats.effect.IO
+import cats.implicits._
 import cats.kernel.Monoid
-import cats.{Monad, MonadError}
+import cats._
 import fs2.Stream
 
 import scala.util.{Failure, Success, Try}
@@ -32,70 +33,50 @@ object instances {
     }
   }
 
-  implicit val streamCons: Cons[Stream[IO, ?]] = new Cons[Stream[IO, ?]] {
-    override def cons[E](cols: Stream[IO, E], e: E): Stream[IO, E] = cols.cons1(e)
-  }
+  type TryF[F[_], A] = Try[F[A]]
 
-  type TryList[A] = Try[List[A]]
-  implicit def unsafeListMonadError(
-      implicit listMonad: Monad[List]): MonadError[TryList, ParseFailure] =
-    new MonadError[TryList, ParseFailure] {
-      override def flatMap[A, B](fa: TryList[A])(f: A => TryList[B]): TryList[B] = {
-        fa.flatMap { la =>
-          la.foldLeft[TryList[B]](Success(Nil)) {
-            case (Success(accB), a) => f(a).map(lb => accB ::: lb)
-            case (failure, _)       => failure
-          }
-        }
-      }
+  implicit def tryFMonoid[F[_], A](implicit monoid: Monoid[F[A]]): Monoid[TryF[F, A]] =
+    new Monoid[TryF[F, A]] {
+      override def empty: TryF[F, A] = Success(monoid.empty)
 
-      override def tailRecM[A, B](a: A)(f: A => TryList[Either[A, B]]): TryList[B] = {
-        def expand(aOrB: List[Either[A, B]], acc: List[B]): TryList[B] = {
-          aOrB match {
-            case h :: tail =>
-              h match {
-                case Right(b) => expand(tail, b :: acc)
-                case Left(a) =>
-                  f(a) match {
-                    case Success(value)     => expand(value, acc)
-                    case Failure(exception) => Failure(exception)
-                  }
-              }
-            case Nil => Success(acc.reverse)
-          }
-
-        }
-
-        f(a).flatMap(abs => expand(abs, Nil))
-      }
-
-      override def raiseError[A](e: ParseFailure): TryList[A] = Failure(e)
-
-      override def handleErrorWith[A](fa: TryList[A])(f: ParseFailure => TryList[A]): TryList[A] =
-        fa.recoverWith {
-          case parseFailure: ParseFailure => f(parseFailure)
-          case other                      => Failure(other)
-        }
-
-      override def pure[A](x: A): TryList[A] = Success(listMonad.pure(x))
-    }
-
-  implicit def tryListMonoid[A](implicit listMonoid: Monoid[List[A]]): Monoid[TryList[A]] =
-    new Monoid[TryList[A]] {
-      override def empty: TryList[A] = Success(Nil)
-
-      override def combine(x: TryList[A], y: TryList[A]): TryList[A] = {
+      override def combine(x: TryF[F, A], y: TryF[F, A]): TryF[F, A] = {
         (x, y) match {
-          case (Success(x), Success(y)) => Success(listMonoid.combine(x, y))
+          case (Success(x), Success(y)) => Success(monoid.combine(x, y))
           case (f @ Failure(_), _)      => f
           case (_, f @ Failure(_))      => f
         }
       }
     }
 
-  implicit val tryListCons: Cons[TryList] = new Cons[TryList] {
-    override def cons[E](cols: TryList[E], e: E): TryList[E] = cols.map { ls =>
-      e :: ls
+  implicit def tryAMonadError[F[_]: Monad: Traverse]: MonadError[TryF[F, ?], ParseFailure] =
+    new MonadError[TryF[F, ?], ParseFailure] {
+      override def raiseError[A](e: ParseFailure): TryF[F, A] = Failure(e)
+      override def handleErrorWith[A](fa: TryF[F, A])(f: ParseFailure => TryF[F, A]): TryF[F, A] =
+        fa.recoverWith {
+          case e: ParseFailure => f(e)
+        }
+      override def flatMap[A, B](fa: TryF[F, A])(f: A => TryF[F, B]): TryF[F, B] = fa.flatMap {
+        inner =>
+          inner.traverse[Try, F[B]](a => f(a)).map(_.flatten)
+
+      }
+      override def tailRecM[A, B](a: A)(f: A => TryF[F, Either[A, B]]): TryF[F, B] = {
+
+        def loop(i: TryF[F, Either[A, B]]): TryF[F, B] = {
+          i match {
+            case Success(v) =>
+              v.traverse[Try, F[B]] {
+                  case Right(b) => Success(Monad[F].pure(b))
+                  case Left(a)  => loop(f(a))
+                }
+                .map(_.flatten)
+            case Failure(e) => Failure(e)
+          }
+        }
+
+        loop(f(a))
+      }
+
+      override def pure[A](x: A): TryF[F, A] = Success(Monad[F].pure(x))
     }
-  }
 }
