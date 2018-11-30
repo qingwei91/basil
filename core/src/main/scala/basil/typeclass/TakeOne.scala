@@ -1,6 +1,5 @@
 package basil.typeclass
 
-import cats.effect.IO
 import cats.syntax.eq._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
@@ -80,25 +79,8 @@ trait TakeOneSyntax {
 }
 
 object TakeOne extends TakeOneSyntax {
-  import fs2.{Pull, Stream}
 
   def apply[F[_]](implicit t: TakeOne[F]): TakeOne[F] = t
-
-  implicit def streamTakeOne: TakeOne[Stream[IO, ?]] =
-    new TakeOne[Stream[IO, ?]] {
-      override def take1[C](src: Stream[IO, C]): Stream[IO, (C, Stream[IO, C])] = {
-        src.pull.uncons1.flatMap {
-          case Some((e, next)) => Pull.output1(e -> next)
-          case None            => Pull.pure(())
-        }.stream
-      }
-
-      override def take1Opt[C](src: Stream[IO, C]): Stream[IO, (Option[C], Stream[IO, C])] =
-        src.pull.uncons1.flatMap {
-          case Some((e, next)) => Pull.output1(Some(e) -> next)
-          case None            => Pull.output1(None    -> Stream.empty)
-        }.stream
-    }
 
   implicit val listTakeOne: TakeOne[List] = new TakeOne[List] {
 
@@ -128,8 +110,8 @@ object TakeOne extends TakeOneSyntax {
         }
       }
 
-      override def take1Opt[Element](
-          src: EffStack[E, F, Element]): EffStack[E, F, (Option[Element], EffStack[E, F, Element])] = {
+      override def take1Opt[Element](src: EffStack[E, F, Element])
+        : EffStack[E, F, (Option[Element], EffStack[E, F, Element])] = {
         Functor[E].map(src) { fa =>
           TakeOne[F].take1Opt(fa).map {
             case (e, fe) => e -> Applicative[E].pure(fe)

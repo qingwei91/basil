@@ -1,8 +1,6 @@
 package basil.typeclass
 
 import cats.Functor
-import cats.effect.IO
-import fs2.Stream
 
 /**
   * Typeclass to provide capability of prepending an element into
@@ -17,9 +15,6 @@ trait Cons[Col[_]] {
 object Cons {
   def apply[F[_]](implicit c: Cons[F]): Cons[F] = c
 
-  implicit val streamCons: Cons[Stream[IO, ?]] = new Cons[Stream[IO, ?]] {
-    override def cons[E](cols: Stream[IO, E], e: E): Stream[IO, E] = cols.cons1(e)
-  }
   implicit val ListCons: Cons[List] = new Cons[List] {
     override def cons[E](cols: List[E], e: E): List[E] = e :: cols
   }
