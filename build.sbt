@@ -8,6 +8,7 @@ enablePlugins(TutPlugin)
 
 lazy val root = project
   .in(file("."))
+  .settings(publishSettings)  // needed to allow `sonatypeRelease`
   .aggregate(core, fs2, derive)
 
 lazy val core = project
@@ -104,7 +105,6 @@ lazy val commons = Def.settings(
 )
 
 lazy val publishSettings = Def.settings(
-  publishTo := sonatypePublishTo.value,
   sonatypeProfileName := "io.github.qingwei91",
   publishMavenStyle := true,
   licenses := Seq("APL2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
@@ -113,6 +113,7 @@ lazy val publishSettings = Def.settings(
   credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credential")
 )
 
+publishTo in ThisBuild := sonatypePublishTo.value
 dynverSonatypeSnapshots in ThisBuild := true
 
 lazy val testDeps = Seq(
