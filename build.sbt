@@ -1,7 +1,7 @@
 import sbt.Keys.scalaVersion
 import sbt.addCompilerPlugin
 
-javaHome := Some(file("/Users/limqingwei/graalvm-ce-1.0.0-rc7/Contents/Home"))
+javaHome := sys.env.get("GRAAL_HOME").map(s => file(s))
 
 enablePlugins(TutPlugin)
 
@@ -46,6 +46,7 @@ lazy val derive = project
 lazy val commons = Def.settings(
   version := "0.1",
   scalaVersion := "2.12.6",
+  organization := "io.github.qingwei91",
   scalacOptions ++= Seq(
     "-deprecation", // Emit warning and location for usages of deprecated APIs.
     "-encoding",
