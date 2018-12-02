@@ -110,9 +110,10 @@ lazy val publishSettings = Def.settings(
   licenses := Seq("APL2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
   useGpg := true,
   sonatypeProjectHosting := Some(GitHubHosting("qingwei", "basil", "l.q.wei91@gmail.com")),
-  credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credential"),
-  dynverSonatypeSnapshots := true
+  credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credential")
 )
+
+dynverSonatypeSnapshots in ThisBuild := true
 
 lazy val testDeps = Seq(
   "org.json4s"     %% "json4s-native" % "3.5.4"  % "test",
