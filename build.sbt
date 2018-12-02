@@ -7,7 +7,7 @@ enablePlugins(TutPlugin)
 
 lazy val root = project
   .in(file("."))
-  .aggregate(core, fs2, magnolia)
+  .aggregate(core, fs2, derive)
 
 lazy val core = project
   .in(file("core"))
@@ -32,10 +32,10 @@ lazy val fs2 = project
     ) ++ testDeps
   )
 
-lazy val magnolia = project
-  .in(file("magnolia-derive"))
+lazy val derive = project
+  .in(file("derive"))
   .dependsOn(core)
-  .settings(name := "basil-magnolia-derive")
+  .settings(name := "basil-derive")
   .settings(commons)
   .settings(
     libraryDependencies ++= Seq(

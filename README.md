@@ -12,7 +12,9 @@ Json from `Array[Char]` is not supported now because Array cannot form a Monad t
 
 * Extract data from partial json, eg. `fs2.Stream[Char]`
 * No intermediate json ast, eg. you get `"mystring"` instead of `JString("mystring")`
-* Composable parse tree, eg. `GetString + GetNum => GetStringAndNum`
+* Composable parse tree via FreeApplicative, eg. `GetString + GetNum => GetStringAndNum`
+* Extract data for case class automatically via `basil-derive` module
+
 
 ### Example
 
