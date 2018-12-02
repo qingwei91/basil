@@ -1,10 +1,9 @@
 package basil.data
-import cats.free.FreeApplicative
+
+import basil.{FreeParseOps, ParseTree}
 import cats.free.FreeApplicative.lift
 
 object ParseOpsConstructor {
-  type ParseTree[I]      = HFix[ParseOps, I]
-  type ParsOpsF[F[_], I] = FreeApplicative[ParseOps[F, ?], I]
 
   /**
     * Syntatic sugar to support creating nested ParseOps structure
@@ -49,8 +48,11 @@ object ParseOpsConstructor {
       }
     }
 
-    def getAll[F[_], T](alls: ParsOpsF[ParseTree, T]): ExprEnd[ParseOps, T] = {
-      ExprEnd(c[T].cont(HFix[ParseOps, T](GetMultiple(alls))))
+    def getAll[I](implicit alls: FreeParseOps[ParseTree, I]): ExprEnd[ParseOps, I] = {
+      ExprEnd(c[I].cont(HFix[ParseOps, I](GetMultiple(alls))))
+    }
+    def getI[I](implicit X: ParseTree[I]): ExprEnd[ParseOps, I] = {
+      ExprEnd(c[I].cont(X))
     }
   }
 
@@ -58,16 +60,21 @@ object ParseOpsConstructor {
     override def apply[I]: Continuable[ParseOps, I] = Continuable[ParseOps, I](identity, End)
   }
 
-  def getNum[F[_]]: ParsOpsF[F, Double] =
+  implicit val getString: HFix[ParseOps, String] = HFix[ParseOps, String](GetString)
+  implicit val getBool: HFix[ParseOps, Boolean]  = HFix[ParseOps, Boolean](GetBool)
+
+  def getNum(e: ExpectedTerminator): HFix[ParseOps, Double] = HFix[ParseOps, Double](GetNum(e))
+
+  implicit def getNumFree[F[_]]: FreeParseOps[F, Double] =
     lift[ParseOps[F, ?], Double](GetNum(End))
 
-  def getString[F[_]]: ParsOpsF[F, String] =
+  implicit def getStringFree[F[_]]: FreeParseOps[F, String] =
     lift[ParseOps[F, ?], String](GetString)
 
-  def getBool[F[_]]: ParsOpsF[F, Boolean] =
+  implicit def getBoolFree[F[_]]: FreeParseOps[F, Boolean] =
     lift[ParseOps[F, ?], Boolean](GetBool)
 
-  def getKey[F[_], I](key: String, next: F[I]): ParsOpsF[F, I] =
+  def getKeyFree[F[_], I](key: String, next: F[I]): FreeParseOps[F, I] =
     lift[ParseOps[F, ?], I](GetKey(key, next))
 }
 
@@ -75,8 +82,7 @@ trait PartialCont[A[_[_], _]] {
   def apply[I]: Continuable[A, I]
 }
 
-sealed trait ExprTree[A[_[_], _]]
 final case class Continuable[A[_[_], _], I](cont: HFix[A, I] => HFix[A, I],
                                             terminator: ExpectedTerminator)
-    extends ExprTree[A]
-final case class ExprEnd[A[_[_], _], I](t: HFix[A, I]) extends ExprTree[A]
+
+final case class ExprEnd[A[_[_], _], I](t: HFix[A, I])

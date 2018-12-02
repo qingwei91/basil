@@ -113,20 +113,21 @@ abstract class ParseSpec[F[_]: Functor]
     "parse product type" in new PContext[F] {
       val obj = ("name" -> "Qing") ~
         ("age"  -> 201) ~
-        ("love" -> true)
+        ("love" -> true) ~ ("nest" -> ("down" -> 20))
       val ops = Start.getAll(
         (
-          getKey("name", HFix[ParseOps, String](GetString)),
-          getKey("age", HFix[ParseOps, Double](GetNum(Comma)))
+          getKeyFree("name", getString),
+          getKeyFree("age", getNum(Comma)),
+          getKeyFree("nest", Start.getKey("down").getNum.t)
         ).mapN {
-          case (a, b) => a -> b
+          case (a, b, c) => (a, b, c)
         }
       )
 
       val string = pretty(render(obj)).toCharArray
 
       val decoded = parseJSStream(ops.t, liftF(string)).getVal
-      decoded mustBe ("Qing" -> 201)
+      decoded mustBe (("Qing", 201, 20))
     }
   }
 }

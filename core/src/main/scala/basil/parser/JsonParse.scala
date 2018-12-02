@@ -397,7 +397,7 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  private implicit val ParseApp: Applicative[Parse] = new Applicative[Parse] {
+  implicit val ParseApp: Applicative[Parse] = new Applicative[Parse] {
     override def pure[A](x: A): Parse[A] = { path => src =>
       ME.pure(x -> src)
     }
