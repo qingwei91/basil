@@ -48,7 +48,7 @@ object ParseOpsConstructor {
       }
     }
 
-    def getAll[I](implicit alls: FreeParseOps[ParseTree, I]): ExprEnd[ParseOps, I] = {
+    def getAll[I](alls: FreeParseOps[ParseTree, I]): ExprEnd[ParseOps, I] = {
       ExprEnd(c[I].cont(HFix[ParseOps, I](GetMultiple(alls))))
     }
     def getI[I](implicit X: ParseTree[I]): ExprEnd[ParseOps, I] = {
@@ -63,7 +63,13 @@ object ParseOpsConstructor {
   implicit val getString: HFix[ParseOps, String] = HFix[ParseOps, String](GetString)
   implicit val getBool: HFix[ParseOps, Boolean]  = HFix[ParseOps, Boolean](GetBool)
 
-  def getNum(e: ExpectedTerminator): HFix[ParseOps, Double] = HFix[ParseOps, Double](GetNum(e))
+  /** todo: Exposing this via implicit looks dangerous, consider separate scope
+    * Right now it is used for automatic case class derivation, which is
+    * encoded as JSON object and thus we can expect the terminator to always be
+    * OneOf(Comma, CurlyBrace)
+    * */
+  implicit val getNum: HFix[ParseOps, Double] =
+    HFix[ParseOps, Double](GetNum(OneOf(Comma, CurlyBrace)))
 
   implicit def getNumFree[F[_]]: FreeParseOps[F, Double] =
     lift[ParseOps[F, ?], Double](GetNum(End))

@@ -75,12 +75,16 @@ All parsing logic lives in `basil.parser.JsonParse`, I tried to be generic here,
 
 This project get a lot of idea from https://github.com/nuttycom/xenomorph, it shows how to retain an extra type parameter with structure that is similar to `Fix`.
 
-I recommend watching this [video](https://www.youtube.com/watch?v=oRLkb6mqvVM) if you are interested
+I recommend this [video](https://www.youtube.com/watch?v=oRLkb6mqvVM) if you are interested
+
+This library also make use of [magnolia](https://github.com/propensive/magnolia) project to derive ParseOps typeclass for case classes
 
 ### Next
 
+* Support Option[X]
 * Split fs2 into separate module
 * Better error message
+* Support extract json number into different scala number type (long, float, int, double)
 * Support extract data as Sequence
 * Support auto decoding of case classes
 * Benchmark

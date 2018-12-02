@@ -117,7 +117,7 @@ abstract class ParseSpec[F[_]: Functor]
       val ops = Start.getAll(
         (
           getKeyFree("name", getString),
-          getKeyFree("age", getNum(Comma)),
+          getKeyFree("age", getNum),
           getKeyFree("nest", Start.getKey("down").getNum.t)
         ).mapN {
           case (a, b, c) => (a, b, c)
