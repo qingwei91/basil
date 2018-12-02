@@ -1,5 +1,6 @@
 import sbt.Keys.scalaVersion
 import sbt.addCompilerPlugin
+import xerial.sbt.Sonatype.GitHubHosting
 
 javaHome := sys.env.get("GRAAL_HOME").map(s => file(s))
 
@@ -13,6 +14,7 @@ lazy val core = project
   .in(file("core"))
   .settings(name := "basil-core")
   .settings(commons)
+  .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-core" % "1.4.0",
@@ -25,6 +27,7 @@ lazy val fs2 = project
   .dependsOn(core % "test->test;compile->compile")
   .settings(name := "basil-fs2")
   .settings(commons)
+  .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
       "co.fs2"        %% "fs2-core"    % "1.0.0",
@@ -37,6 +40,7 @@ lazy val derive = project
   .dependsOn(core)
   .settings(name := "basil-derive")
   .settings(commons)
+  .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
       "com.propensive" %% "magnolia" % "0.10.0"
@@ -98,6 +102,17 @@ lazy val commons = Def.settings(
   addCompilerPlugin("org.spire-math"  %% "kind-projector" % "0.9.7"),
   addCompilerPlugin("org.scalamacros" % "paradise"        % "2.1.0" cross CrossVersion.full)
 )
+
+lazy val publishSettings = Def.settings(
+  publishTo := sonatypePublishTo.value,
+  sonatypeProfileName := "io.github.qingwei91",
+  publishMavenStyle := true,
+  licenses := Seq("APL2" -> url("http://www.apache.org/licenses/LICENSE-2.0.txt")),
+  useGpg := true,
+  sonatypeProjectHosting := Some(GitHubHosting("qingwei", "basil", "l.q.wei91@gmail.com")),
+  credentials += Credentials(Path.userHome / ".sbt" / "sonatype_credential")
+)
+
 lazy val testDeps = Seq(
   "org.json4s"     %% "json4s-native" % "3.5.4"  % "test",
   "com.lihaoyi"    %% "pprint"        % "0.5.3"  % "test",

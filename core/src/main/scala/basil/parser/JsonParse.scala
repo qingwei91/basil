@@ -69,7 +69,7 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     *
     * part 1 - 20 terminated by .
     * part 2 - 6 terminated by e
-    * part 3 - 10 terminated by $terminator
+    * part 3 - 10 terminated by terminator
     *
     * @param terminator to indicate what character terminates the number
     * @return
@@ -151,15 +151,12 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
   private def accJsString(i: Source[Char])(
       implicit path: Vector[PPath]): Source[(Vector[Char], Source[Char])] = {
 
-    /**
-      * @param lastCharIsSpecial - we need to know if last
-      *                          char is special or not, so that we can
-      *                          know if the last `\\` starts a new escape
-      *                          sequence, eg. acc = "\\\\", then
-      *                          we should not treat the next char as part of
-      *                          escape sequence
-      * @return
-      */
+    // lastCharIsSpecial - we need to know if last
+    // char is special or not, so that we can
+    // know if the last `\\` starts a new escape
+    // sequence, eg. acc = "\\\\", then
+    // we should not treat the next char as part of
+    // escape sequence
     def recurse(s: Source[Char])(
         acc: Vector[Char],
         lastCharIsSpecial: Boolean): Source[(Vector[Char], Source[Char])] = {
