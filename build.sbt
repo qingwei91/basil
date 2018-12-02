@@ -44,7 +44,6 @@ lazy val derive = project
   )
 
 lazy val commons = Def.settings(
-  version := "0.1",
   scalaVersion := "2.12.6",
   organization := "io.github.qingwei91",
   scalacOptions ++= Seq(
