@@ -10,6 +10,16 @@ Json from `Array[Char]` is not supported now because Array cannot form a Monad t
 
 **Warning**: This library is not production ready yet.
 
+### To try it out
+
+```scala
+libraryDependencies += Seq(
+    "io.github.qingwei91" %% "basil-core"   % "0.0.2",
+    "io.github.qingwei91" %% "basil-derive" % "0.0.2",
+    "io.github.qingwei91" %% "basil-fs2"    % "0.0.2"
+)
+```
+
 ### Features
 
 * Extract data from partial json, eg. `fs2.Stream[Char]`
@@ -20,6 +30,7 @@ Json from `Array[Char]` is not supported now because Array cannot form a Monad t
 
 ### Example
 
+Extract primitive value from json
 ```scala
 import basil.data.ParseOpsConstructor._
 import basil.parser.implicits._
@@ -36,6 +47,28 @@ val result = Parser.parseJS(parseOps, completeJS.toCharArray.toList).head.map(_.
 
 result == 2020.111
 
+```
+
+Extract case class from json
+```scala
+case class Person(name: String, age: Double)
+case class Order(id: String, size: String, belongsTo: Person)
+
+// this imports support deriving parse function for case class
+import basil.derive.DeriveParseOps._
+
+val what     = Start.getI[Order].t
+val js       =
+    ("id" -> "hoho") ~
+    ("size" -> "20") ~
+    ("belongsTo" ->
+        ("name" -> "Qing") ~
+        ("age" -> 20)
+    )
+val jsString = pretty(render(js))
+val res      = Parser.parseString(what, jsString)
+
+res == Success(Order("hoho", "20", Person("Qing", 20)))
 ```
 
 For more example, check out the test:
