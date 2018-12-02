@@ -4,6 +4,8 @@
 
 A json `Decoder` that can extract data from partial, incomplete json.
 
+The main idea is to describe the data you need from json as recursive data structure called `ParseOps`, which then get interpreted into a `Parse` function which have a signature of `String => YourData` that you can use to parse json, the actual function signature is slightly more complex, but the idea is the same.
+
 Json from `Array[Char]` is not supported now because Array cannot form a Monad trivially, one could convert `Array[Char]` to `List[Char]` for now.
 
 **Warning**: This library is not production ready yet as I haven't done any benchmarking.
@@ -35,6 +37,11 @@ val result = Parser.parseJS(parseOps, completeJS.toCharArray.toList).head.map(_.
 result == 2020.111
 
 ```
+
+For more example, check out the test:
+
+[Json Parsing example](./core/src/test/scala/basil/parser/ParseSpec.scala)
+[Case class parsing example](./derive/src/test/scala/basil/derive/DeriveParseSpec.scala)
 
 ### How to compose ParseOps?
 
@@ -83,11 +90,11 @@ This library also make use of [magnolia](https://github.com/propensive/magnolia)
 
 ### Next
 
+* Benchmark
 * Support Option[X]
 * Split fs2 into separate module
 * Better error message
 * Support extract json number into different scala number type (long, float, int, double)
 * Support extract data as Sequence
 * Support auto decoding of case classes
-* Benchmark
 * Document how HFix and HFunctor work

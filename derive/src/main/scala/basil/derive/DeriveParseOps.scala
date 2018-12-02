@@ -1,4 +1,4 @@
-package basil.magnolia
+package basil.derive
 
 import basil.data.ParseOpsConstructor._
 import basil.data.{GetMultiple, HFix}
