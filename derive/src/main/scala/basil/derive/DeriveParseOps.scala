@@ -5,7 +5,7 @@ import basil.data.{GetMultiple, HFix}
 import basil.{FreeParseOps, ParseTree}
 import cats.instances.list._
 import cats.syntax.traverse._
-import magnolia.{CaseClass, Magnolia, SealedTrait}
+import magnolia.{CaseClass, Magnolia}
 
 object DeriveParseOps {
   type Typeclass[T] = ParseTree[T]
@@ -19,8 +19,6 @@ object DeriveParseOps {
 
     HFix(GetMultiple(t))
   }
-
-  def dispatch[T](sealedTrait: SealedTrait[Typeclass, T]): Typeclass[T] = ???
 
   implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
 

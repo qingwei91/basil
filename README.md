@@ -8,7 +8,7 @@ The main idea is to describe the data you need from json as recursive data struc
 
 Json from `Array[Char]` is not supported now because Array cannot form a Monad trivially, one could convert `Array[Char]` to `List[Char]` for now.
 
-**Warning**: This library is not production ready yet as I haven't done any benchmarking.
+**Warning**: This library is not production ready yet.
 
 ### Features
 
