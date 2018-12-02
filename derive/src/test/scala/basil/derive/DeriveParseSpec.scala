@@ -1,10 +1,8 @@
 package basil.derive
 
 import basil.data.ParseOpsConstructor._
-import basil.data.{GetMultiple, ParseOps}
 import basil.parser.Parser
 import basil.parser.implicits._
-import cats.free.FreeApplicative
 import org.json4s.JsonDSL._
 import org.json4s.native.JsonMethods.{pretty, render}
 import org.scalatest.{MustMatchers, WordSpec}
