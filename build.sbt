@@ -6,7 +6,7 @@ javaHome := sys.env.get("GRAAL_HOME").map(s => file(s))
 
 enablePlugins(TutPlugin)
 
-lazy val root = project
+lazy val basil = project
   .in(file("."))
   .settings(publishSettings)  // needed to allow `sonatypeRelease`
   .aggregate(core, fs2, derive)
