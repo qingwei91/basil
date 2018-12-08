@@ -1,6 +1,6 @@
 ## Basil
 
-![Build](https://travis-ci.org/buaya91/basil.svg?branch=master)
+![Build](https://travis-ci.org/qingwei91/basil.svg?branch=master)
 
 A json `Decoder` that can extract data from partial, incomplete json.
 
