@@ -57,6 +57,7 @@ trait ParserGen {
       JObject(merged) -> drillDown
     }
   }
+
   private def endingOpGen: Gen[ExpectedTerminator => OpTree[_]] = {
     val s: ExpectedTerminator => OpTree[String]  = _ => HFix[ParseOps, String](GetString)
     val n: ExpectedTerminator => OpTree[Double]  = x => HFix[ParseOps, Double](GetNum(x))
@@ -72,14 +73,24 @@ trait ParserGen {
   private def nonEndingOpGen[_](
       gen: Gen[ExpectedTerminator => OpTree[_]]): Gen[ExpectedTerminator => OpTree[_]] = {
 
+    // Hack to make sure we generate non-nested optional field
+    // this
+    def optFallBack(nextOp: ExpectedTerminator => OpTree[_]) = {
+      val x = GetOptFlat[OpTree, Any](
+        nextOp(Comma)
+          .asInstanceOf[OpTree[Option[Any]]]
+      ).asInstanceOf[ParseOps[OpTree, Option[_]]]
+      HFix(x).asInstanceOf[OpTree[_]]
+    }
+
     for {
-      endingOp <- gen
-      n        <- Gen.choose(0, 5)
-      key      <- Gen.alphaStr.filter(_.nonEmpty)
+      nextOp <- gen
+      n      <- Gen.choose(0, 5)
+      key    <- Gen.alphaStr.filter(_.nonEmpty)
       op <- Gen.oneOf[OpTree[_]](
-             HFix(GetN(n, endingOp(OneOf(Bracket, Comma)))),
-             HFix(GetKey(key, endingOp(OneOf(Comma, CurlyBrace)))),
-             HFix(GetOpt(endingOp(Comma)).asInstanceOf[ParseOps[OpTree, _]]).asInstanceOf[OpTree[_]]
+             HFix(GetN(n, nextOp(OneOf(Bracket, Comma)))),
+             HFix(GetKey(key, nextOp(OneOf(Comma, CurlyBrace)))),
+             optFallBack(nextOp)
            )
     } yield { _: ExpectedTerminator =>
       op
@@ -98,7 +109,6 @@ trait ParserGen {
     } else {
       recurse(depth).map(f => f(End))
     }
-
   }
 
   /**
@@ -148,7 +158,8 @@ trait ParserGen {
           case GetKey(key, next) => jsObjGen(key, next)
           case GetMultiple(all)  => productJSGen(all)
 
-          case getOpt: GetOpt[ObjExpectedGen, a] => optionGen(getOpt.next)
+          case getOpt: GetOpt[ObjExpectedGen, a]      => optionGen(getOpt.next)
+          case getOptF: GetOptFlat[ObjExpectedGen, a] => getOptF.next
         }
       }
     }

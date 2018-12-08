@@ -428,13 +428,14 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
   val parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
     override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
       fa match {
-        case GetString                => parseString
-        case GetBool                  => parseBoolean
-        case GetNum(t)                => parseNumber(t)
-        case getN: GetN[Parse, i]     => parseArrayItem(getN.n, getN.next)
-        case getK: GetKey[Parse, i]   => parseObj(getK.key, getK.next)
-        case GetMultiple(all)         => parseProduct(all)
-        case getOpt: GetOpt[Parse, i] => parseOptional(getOpt.next)
+        case GetString                    => parseString
+        case GetBool                      => parseBoolean
+        case GetNum(t)                    => parseNumber(t)
+        case getN: GetN[Parse, i]         => parseArrayItem(getN.n, getN.next)
+        case getK: GetKey[Parse, i]       => parseObj(getK.key, getK.next)
+        case GetMultiple(all)             => parseProduct(all)
+        case getOpt: GetOpt[Parse, i]     => parseOptional(getOpt.next)
+        case getOpt: GetOptFlat[Parse, i] => getOpt.next
       }
     }
   }
