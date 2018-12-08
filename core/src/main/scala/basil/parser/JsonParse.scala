@@ -8,6 +8,7 @@ import cats.instances.char._
 import cats.kernel.Monoid
 import cats.syntax.flatMap._
 import cats.syntax.functor._
+import cats.syntax.applicativeError._
 import cats.{Applicative, MonadError, ~>}
 
 /**
@@ -414,15 +415,26 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     all.foldMap(parsing)
   }
 
+  private def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
+    parse(path)(src)
+      .map[(Option[I], CharSource)] {
+        case (i, next) => Some(i) -> next
+      }
+      .recover {
+        case _ => None -> src
+      }
+  }
+
   val parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
     override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
       fa match {
-        case GetString              => parseString
-        case GetBool                => parseBoolean
-        case GetNum(t)              => parseNumber(t)
-        case getN: GetN[Parse, i]   => parseArrayItem(getN.n, getN.next)
-        case getK: GetKey[Parse, i] => parseObj(getK.key, getK.next)
-        case GetMultiple(all)       => parseProduct(all)
+        case GetString                => parseString
+        case GetBool                  => parseBoolean
+        case GetNum(t)                => parseNumber(t)
+        case getN: GetN[Parse, i]     => parseArrayItem(getN.n, getN.next)
+        case getK: GetKey[Parse, i]   => parseObj(getK.key, getK.next)
+        case GetMultiple(all)         => parseProduct(all)
+        case getOpt: GetOpt[Parse, i] => parseOptional(getOpt.next)
       }
     }
   }

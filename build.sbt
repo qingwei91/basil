@@ -31,8 +31,8 @@ lazy val fs2 = project
   .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
-      "co.fs2"        %% "fs2-core"    % "1.0.0",
-      "org.typelevel" %% "cats-effect" % "1.0.0"
+      "co.fs2"        %% "fs2-core"    % "1.0.2",
+      "org.typelevel" %% "cats-effect" % "1.1.0"
     ) ++ testDeps
   )
 

@@ -17,6 +17,7 @@ case object GetBool extends ParseOps[Nothing, Boolean]
 
 final case class GetNum(term: ExpectedTerminator) extends ParseOps[Nothing, Double]
 
+final case class GetOpt[F[_], I](next: F[I]) extends ParseOps[F, Option[I]]
 final case class GetMultiple[F[_], I](allOf: FreeApplicative[ParseOps[F, ?], I])
     extends ParseOps[F, I]
 
@@ -30,12 +31,15 @@ object ParseOps {
       new (ParseOps[M, ?] ~> ParseOps[N, ?]) { self =>
         override def apply[A](fa: ParseOps[M, A]): ParseOps[N, A] = {
           fa match {
-            case getN: GetN[M, A]        => GetN(getN.n, nt(getN.next))
-            case getK: GetKey[M, A]      => GetKey(getK.key, nt(getK.next))
             case GetString               => GetString
             case GetBool                 => GetBool
             case num: GetNum             => num
+            case getN: GetN[M, A]        => GetN(getN.n, nt(getN.next))
+            case getK: GetKey[M, A]      => GetKey(getK.key, nt(getK.next))
             case getM: GetMultiple[M, A] => GetMultiple(getM.allOf.compile(self))
+
+            case getO: GetOpt[M, a] with ParseOps[M, A] =>
+              GetOpt[N, a](nt(getO.next)).asInstanceOf[ParseOps[N, A]]
           }
         }
       }

@@ -15,3 +15,8 @@ object ParseFailure {
   def termination(implicit path: Vector[PPath]): ParseFailure =
     ParseFailure("Unexpected termination", path)
 }
+
+sealed trait ParseError
+case class KeyMissingError(key: String, path: Vector[PPath]) extends ParseError
+case class UnexpectedType(expectedType: String, unexpectedChar: Char, path: Vector[PPath])
+    extends ParseError
