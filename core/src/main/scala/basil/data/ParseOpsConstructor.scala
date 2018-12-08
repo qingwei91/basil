@@ -71,6 +71,10 @@ object ParseOpsConstructor {
   implicit val getNum: HFix[ParseOps, Double] =
     HFix[ParseOps, Double](GetNum(OneOf(Comma, CurlyBrace)))
 
+  implicit def getOpt[I](implicit getI: HFix[ParseOps, I]): HFix[ParseOps, Option[I]] = {
+    HFix[ParseOps, Option[I]](GetOpt(getI))
+  }
+
   implicit def getNumFree[F[_]]: FreeParseOps[F, Double] =
     lift[ParseOps[F, ?], Double](GetNum(End))
 
