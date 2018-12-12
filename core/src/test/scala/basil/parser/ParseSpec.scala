@@ -75,7 +75,7 @@ abstract class ParseSpec[F[_]: Functor]
         case (obj, expected) =>
           val jsonStr = pretty(render(obj)).toCharArray
 
-          val ops     = Start.getKey("myKey").getN(2).getString.t
+          val ops     = Start.getKey("myKey").getN(2).getString.eval
           val decoded = parseJSStream(ops, liftF(jsonStr)).getVal
           decoded mustBe expected.values
       }
@@ -93,7 +93,7 @@ abstract class ParseSpec[F[_]: Functor]
     "parse partial array" in new PContext[F] {
       val arr: JArray  = List(2, 3, 10, 20, 31)
       val partialJsStr = pretty(render(arr)).toCharArray.dropRight(6)
-      val ops          = Start.getN(2).getNum.t
+      val ops          = Start.getN(2).getNum.eval
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
 
@@ -105,7 +105,7 @@ abstract class ParseSpec[F[_]: Functor]
         ("{wontwork" -> List(true, false))
 
       val partialJsStr = pretty(render(obj)).toCharArray.dropRight(15)
-      val ops          = Start.getKey("").getKey("really?").getString.t
+      val ops          = Start.getKey("").getKey("really?").getString.eval
 
       val decoded = parseJSStream(ops, liftF(partialJsStr)).getVal
       decoded mustBe "nope"
@@ -118,7 +118,7 @@ abstract class ParseSpec[F[_]: Functor]
         (
           getKeyFree("name", getString),
           getKeyFree("age", getNum),
-          getKeyFree("nest", Start.getKey("down").getNum.t)
+          getKeyFree("nest", Start.getKey("down").getNum.eval)
         ).mapN {
           case (a, b, c) => (a, b, c)
         }
@@ -126,7 +126,7 @@ abstract class ParseSpec[F[_]: Functor]
 
       val string = pretty(render(obj)).toCharArray
 
-      val decoded = parseJSStream(ops.t, liftF(string)).getVal
+      val decoded = parseJSStream(ops.eval, liftF(string)).getVal
       decoded mustBe (("Qing", 201, 20))
     }
     "parse nested optional value" in new PContext[F] {
@@ -134,7 +134,7 @@ abstract class ParseSpec[F[_]: Functor]
         "inner" -> "string"
       ))
       val jsStr = pretty(render(obj)).toCharArray
-      val ops   = Start.getKey("outer").getOpt.getKey("missing").getString.t
+      val ops   = Start.getKey("outer").getOpt.getKey("missing").getString.eval
 
       val decoded = parseJSStream(ops, liftF(jsStr)).getVal
       decoded mustBe None

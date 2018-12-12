@@ -11,26 +11,35 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
     * Syntatic sugar to support creating nested ParseOps structure
     * using builder pattern
     */
-  implicit class PartialCont(val outer: PartiallyAppliedCont[ParseOps, Id]) extends AnyVal {
+  implicit class PartialCont[F[_]](val outer: PartiallyAppliedCont[ParseOps, F]) extends AnyVal {
 
-    def getNum: ExprEnd[ParseOps, Double] = {
+    def getNum: ExprEnd[ParseOps, F[Double]] = {
       val applied = outer[Double]
       ExprEnd(applied.cont(HFix[ParseOps, Double](GetNum(applied.terminator))))
     }
-    def getString: ExprEnd[ParseOps, String] = {
+
+    def getString: ExprEnd[ParseOps, F[String]] = {
       val applied = outer[String]
-      ExprEnd[ParseOps, String](applied.cont(HFix[ParseOps, String](GetString)))
+      ExprEnd[ParseOps, F[String]](applied.cont(HFix[ParseOps, String](GetString)))
     }
 
-    def getBool: ExprEnd[ParseOps, Boolean] = {
+    def getBool: ExprEnd[ParseOps, F[Boolean]] = {
       val applied = outer[Boolean]
       ExprEnd(applied.cont(HFix[ParseOps, Boolean](GetBool)))
     }
 
-    def getKey(key: String): PartiallyAppliedCont[ParseOps, Id] = {
-      new PartiallyAppliedCont[ParseOps, Id] {
-        override def apply[I]: Cont[ParseOps, Id, I] = {
-          val cont: HFix[ParseOps, I] => HFix[ParseOps, Id[I]] = { next =>
+    def getType[I](implicit X: ParseTree[I]): ExprEnd[ParseOps, F[I]] = {
+      ExprEnd(outer[I].cont(X))
+    }
+
+    def getAll[I](alls: FreeParseOps[ParseTree, I]): ExprEnd[ParseOps, F[I]] = {
+      ExprEnd(outer[I].cont(HFix[ParseOps, I](GetMultiple(alls))))
+    }
+
+    def getKey(key: String): PartiallyAppliedCont[ParseOps, F] = {
+      new PartiallyAppliedCont[ParseOps, F] {
+        override def apply[I]: Cont[ParseOps, F, I] = {
+          val cont: HFix[ParseOps, I] => HFix[ParseOps, F[I]] = { next =>
             val inner = HFix(GetKey(key, next))
             outer[I].cont(inner)
           }
@@ -40,10 +49,10 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
       }
     }
 
-    def getN(n: Int): PartiallyAppliedCont[ParseOps, Id] = {
-      new PartiallyAppliedCont[ParseOps, Id] {
-        override def apply[I]: Cont[ParseOps, Id, I] = {
-          val cont: HFix[ParseOps, I] => HFix[ParseOps, Id[I]] = { next =>
+    def getN(n: Int): PartiallyAppliedCont[ParseOps, F] = {
+      new PartiallyAppliedCont[ParseOps, F] {
+        override def apply[I]: Cont[ParseOps, F, I] = {
+          val cont: HFix[ParseOps, I] => HFix[ParseOps, F[I]] = { next =>
             val inner = HFix(GetN(n, next))
             outer[I].cont(inner)
           }
@@ -52,26 +61,21 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
       }
     }
 
-    def getAll[I](alls: FreeParseOps[ParseTree, I]): ExprEnd[ParseOps, I] = {
-      ExprEnd(outer[I].cont(HFix[ParseOps, I](GetMultiple(alls))))
-    }
-
-    def getOpt: PartiallyAppliedCont[ParseOps, Option] = {
-      new PartiallyAppliedCont[ParseOps, Option] {
-        override def apply[I]: Cont[ParseOps, Option, I] = {
-          val cont: HFix[ParseOps, I] => HFix[ParseOps, Option[I]] = { next =>
+    type FO[X] = F[Option[X]]
+    def getOpt: PartiallyAppliedCont[ParseOps, FO] = {
+      new PartiallyAppliedCont[ParseOps, FO] {
+        override def apply[I]: Cont[ParseOps, FO, I] = {
+          val cont: HFix[ParseOps, I] => HFix[ParseOps, F[Option[I]]] = { next =>
             val inner = HFix(GetOpt(next): ParseOps[HFix[ParseOps, ?], Option[I]])
+
             outer[Option[I]].cont(inner)
           }
 
-          Cont(cont, OneOf(Comma, CurlyBrace, Bracket))
+          Cont[ParseOps, FO, I](cont, OneOf(Comma, CurlyBrace, Bracket))
         }
       }
     }
 
-    def getType[I](implicit X: ParseTree[I]): ExprEnd[ParseOps, I] = {
-      ExprEnd(outer[I].cont(X))
-    }
   }
 
   val Start: PartiallyAppliedCont[ParseOps, Id] = new PartiallyAppliedCont[ParseOps, Id] {
@@ -116,4 +120,4 @@ trait PartiallyAppliedCont[A[_[_], _], F[_]] {
 final case class Cont[A[_[_], _], F[_], I](cont: HFix[A, I] => HFix[A, F[I]],
                                            terminator: ExpectedTerminator)
 
-final case class ExprEnd[A[_[_], _], I](t: HFix[A, I])
+final case class ExprEnd[A[_[_], _], I](eval: HFix[A, I])

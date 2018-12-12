@@ -16,7 +16,7 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
   "Able to derive ParseOp for nested case class" in {
     import DeriveParseOps._
 
-    val what = Start.getType[Order].t
+    val what = Start.getType[Order].eval
     val js = ("id" -> "hoho") ~
       ("size" -> "20") ~
       ("belongsTo" ->
