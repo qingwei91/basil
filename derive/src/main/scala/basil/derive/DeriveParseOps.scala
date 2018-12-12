@@ -1,8 +1,8 @@
 package basil.derive
 
-import basil.data.ParseOpsConstructor._
 import basil.data.{GetMultiple, HFix}
 import basil.{FreeParseOps, ParseTree}
+import basil.syntax.ParseOpsConstructor._
 import cats.instances.list._
 import cats.syntax.traverse._
 import magnolia.{CaseClass, Magnolia}

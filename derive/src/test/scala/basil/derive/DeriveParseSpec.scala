@@ -1,8 +1,8 @@
 package basil.derive
 
-import basil.data.ParseOpsConstructor._
 import basil.parser.Parser
 import basil.parser.implicits._
+import basil.syntax.ParseOpsConstructor._
 import org.json4s.JsonDSL._
 import org.json4s.native.JsonMethods.{pretty, render}
 import org.scalatest.{MustMatchers, WordSpec}
@@ -16,7 +16,7 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
   "Able to derive ParseOp for nested case class" in {
     import DeriveParseOps._
 
-    val what = Start.getI[Order].t
+    val what = Start.getType[Order].t
     val js = ("id" -> "hoho") ~
       ("size" -> "20") ~
       ("belongsTo" ->

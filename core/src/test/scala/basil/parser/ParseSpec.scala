@@ -1,7 +1,7 @@
 package basil.parser
 
-import basil.data.ParseOpsConstructor._
 import basil.data._
+import basil.syntax.ParseOpsConstructor._
 import cats.Functor
 import cats.implicits._
 import org.json4s.JsonDSL._
@@ -128,6 +128,16 @@ abstract class ParseSpec[F[_]: Functor]
 
       val decoded = parseJSStream(ops.t, liftF(string)).getVal
       decoded mustBe (("Qing", 201, 20))
+    }
+    "parse nested optional value" in new PContext[F] {
+      val obj: JValue = ("outer" -> (
+        "inner" -> "string"
+      ))
+      val jsStr = pretty(render(obj)).toCharArray
+      val ops   = Start.getKey("outer").getOpt.getKey("missing").getString.t
+
+      val decoded = parseJSStream(ops, liftF(jsStr)).getVal
+      decoded mustBe None
     }
   }
 }
