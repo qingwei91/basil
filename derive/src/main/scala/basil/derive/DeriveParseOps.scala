@@ -1,11 +1,12 @@
 package basil.derive
 
-import basil.data.{GetMultiple, HFix}
+import basil.data.{GetProduct, GetSum, HFix, ParseOps}
 import basil.{FreeParseOps, ParseTree}
 import basil.syntax.ParseOpsConstructor._
+import cats.data.NonEmptyList
 import cats.instances.list._
 import cats.syntax.traverse._
-import magnolia.{CaseClass, Magnolia}
+import magnolia.{CaseClass, Magnolia, SealedTrait}
 
 object DeriveParseOps {
   type Typeclass[T] = ParseTree[T]
@@ -17,7 +18,15 @@ object DeriveParseOps {
       }
       .map(p => caseClass.rawConstruct(p))
 
-    HFix(GetMultiple(t))
+    HFix(GetProduct(t))
+  }
+
+  def dispatch[T](ctx: SealedTrait[Typeclass, T]): Typeclass[T] = {
+    val x: List[Typeclass[T]] = ctx.subtypes.toList.map { subtype =>
+      subtype.typeclass.asInstanceOf[Typeclass[T]]
+    }
+
+    HFix[ParseOps, T](GetSum(NonEmptyList.fromListUnsafe(x)))
   }
 
   implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
