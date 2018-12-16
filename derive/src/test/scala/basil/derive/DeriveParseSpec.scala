@@ -1,8 +1,10 @@
 package basil.derive
 
+import basil.ParseTree
 import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
+import cats.syntax.functor._
 import org.json4s.JsonDSL._
 import org.json4s.native.JsonMethods.{pretty, render}
 import org.scalatest.{MustMatchers, WordSpec}
@@ -14,8 +16,17 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
   case object Married extends Status
   case object Single  extends Status
 
-  case class Person(name: String, age: Double, married: Boolean, life: Option[String])
+  case class Person(name: String, age: Double, married: Status, life: Option[String])
   case class Order(id: String, size: String, belongsTo: Person)
+
+  implicit val StringIsMarried: ParseTree[Single.type] = getString
+    .map(_ => Single)
+
+  implicit val BoolIsMarried: ParseTree[Married.type] = getBool
+    .map {
+      case true  => Married
+      case false => Married
+    }
 
   "Able to derive ParseOp for nested case class" in {
     import DeriveParseOps._
@@ -32,6 +43,6 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
     val jsString = pretty(render(js))
     val res      = Parser.parseString(what, jsString)
 
-    res mustBe Success(Order("hoho", "20", Person("Qing", 20, true, Some("hoho"))))
+    res mustBe Success(Order("hoho", "20", Person("Qing", 20, Married, Some("hoho"))))
   }
 }

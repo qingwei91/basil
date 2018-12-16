@@ -139,7 +139,7 @@ trait ParserGen {
         JNull -> None
       } else {
         a match {
-          case None => JNull -> None  // nested None should be flatten
+          case None => JNull -> None // nested None should be flatten
           case _    => obj   -> Some(a)
         }
       }
@@ -159,6 +159,10 @@ trait ParserGen {
           case GetSum(oneOf)     => oneOfJSGen(oneOf)
 
           case getOpt: GetOpt[ObjExpectedGen, a] => optionGen(getOpt.next)
+          case mapped: Mapped[ObjExpectedGen, h, A] =>
+            mapped.fi.map {
+              case (js, h) => js -> mapped.fn(h)
+            }
         }
       }
     }

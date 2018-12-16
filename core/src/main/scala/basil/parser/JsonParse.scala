@@ -418,7 +418,7 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
 
   private def parseOneOf[I](oneOf: NonEmptyList[Parse[I]]): Parse[I] = { path => src =>
     val h = oneOf.head
-    oneOf.toList match {
+    oneOf.tail.toList match {
       case Nil => h(path)(src)
       case nonEmpty =>
         h(path)(src).recoverWith {
@@ -450,14 +450,15 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
   val parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
     override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
       val parseA = fa match {
-        case GetString                => parseString
-        case GetBool                  => parseBoolean
-        case GetNum(t)                => parseNumber(t)
-        case getN: GetN[Parse, i]     => parseArrayItem(getN.n, getN.next)
-        case getK: GetKey[Parse, i]   => parseObj(getK.key, getK.next)
-        case GetProduct(all)          => parseProduct(all)
-        case GetSum(oneOf)            => parseOneOf(oneOf)
-        case getOpt: GetOpt[Parse, i] => parseOptional(getOpt.next)
+        case GetString                   => parseString
+        case GetBool                     => parseBoolean
+        case GetNum(t)                   => parseNumber(t)
+        case getN: GetN[Parse, i]        => parseArrayItem(getN.n, getN.next)
+        case getK: GetKey[Parse, i]      => parseObj(getK.key, getK.next)
+        case GetProduct(all)             => parseProduct(all)
+        case GetSum(oneOf)               => parseOneOf(oneOf)
+        case getOpt: GetOpt[Parse, i]    => parseOptional(getOpt.next)
+        case mapped: Mapped[Parse, h, A] => mapped.fi.map(mapped.fn)
       }
       // is this harmful??
       parseA.asInstanceOf[Parse[A]]
