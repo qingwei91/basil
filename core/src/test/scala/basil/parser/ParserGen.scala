@@ -1,5 +1,6 @@
 package basil.parser
 import basil.data._
+import cats.data.NonEmptyList
 import cats.free.FreeApplicative
 import cats.{Applicative, ~>}
 import org.json4s.{JArray, JBool, JDouble, JNull, JObject, JString, JValue}
@@ -66,20 +67,11 @@ trait ParserGen {
     Gen.oneOf(s, n, b)
   }
 
-  implicit class GenOps[A](gen: Gen[A]) {
-    def branch: Gen[(A, A)] = gen.map(s => s -> s)
-  }
-
   private def nonEndingOpGen[_](
       gen: Gen[ExpectedTerminator => OpTree[_]]): Gen[ExpectedTerminator => OpTree[_]] = {
 
-    // Hack to make sure we generate non-nested optional field
-    // this
     def optFallBack(nextOp: ExpectedTerminator => OpTree[_]) = {
-      val x = GetOptFlat[OpTree, Any](
-        nextOp(Comma)
-          .asInstanceOf[OpTree[Option[Any]]]
-      ).asInstanceOf[ParseOps[OpTree, Option[_]]]
+      val x = GetOpt[OpTree, Any](nextOp(Comma).asInstanceOf[OpTree[Any]])
       HFix(x).asInstanceOf[OpTree[_]]
     }
 
@@ -117,19 +109,21 @@ trait ParserGen {
     */
   type ObjExpectedGen[E] = Gen[(JValue, E)]
 
-  implicit val objExpectedGen: Applicative[ObjExpectedGen] = new Applicative[ObjExpectedGen] {
-    override def pure[A](x: A): ObjExpectedGen[A] = Gen.const(JNull -> x)
-    override def ap[A, B](ff: ObjExpectedGen[A => B])(fa: ObjExpectedGen[A]): ObjExpectedGen[B] = {
-      for {
-        x      <- fa
-        (_, a) = x
-        y      <- ff
-        (o, f) = y
-      } yield {
-        o -> f(a)
+  implicit val objExpectedGenApplicative: Applicative[ObjExpectedGen] =
+    new Applicative[ObjExpectedGen] {
+      override def pure[A](x: A): ObjExpectedGen[A] = Gen.const(JNull -> x)
+      override def ap[A, B](ff: ObjExpectedGen[A => B])(
+          fa: ObjExpectedGen[A]): ObjExpectedGen[B] = {
+        for {
+          x      <- fa
+          (_, a) = x
+          y      <- ff
+          (o, f) = y
+        } yield {
+          o -> f(a)
+        }
       }
     }
-  }
 
   private def genJs[I](expr: HFix[ParseOps, I]): ObjExpectedGen[I] =
     HFix.cata[ParseOps, I, ObjExpectedGen](expr, gen)
@@ -143,7 +137,12 @@ trait ParserGen {
     } yield {
       if (optional) {
         JNull -> None
-      } else obj -> Some(a)
+      } else {
+        a match {
+          case None => JNull -> None  // nested None should be flatten
+          case _    => obj   -> Some(a)
+        }
+      }
     }
   }
 
@@ -156,10 +155,10 @@ trait ParserGen {
           case GetBool           => boolGen.map(x => x -> x.values)
           case GetN(n, next)     => jsArrGen(n, next)
           case GetKey(key, next) => jsObjGen(key, next)
-          case GetMultiple(all)  => productJSGen(all)
+          case GetProduct(all)   => productJSGen(all).asInstanceOf[ObjExpectedGen[A]]
+          case GetSum(oneOf)     => oneOfJSGen(oneOf)
 
-          case getOpt: GetOpt[ObjExpectedGen, a]      => optionGen(getOpt.next)
-          case getOptF: GetOptFlat[ObjExpectedGen, a] => getOptF.next
+          case getOpt: GetOpt[ObjExpectedGen, a] => optionGen(getOpt.next)
         }
       }
     }
@@ -169,6 +168,17 @@ trait ParserGen {
   private def productJSGen[A](
       all: FreeApplicative[ParseOps[ObjExpectedGen, ?], A]): ObjExpectedGen[A] = {
     all.foldMap(gen)
+  }
+
+  private def oneOfJSGen[A](oneOf: NonEmptyList[ObjExpectedGen[A]]): ObjExpectedGen[A] = {
+    val size = oneOf.size
+
+    if (size >= 2) {
+      val rest = oneOf.tail
+      Gen.oneOf(oneOf.head, rest.head, rest.tail: _*)
+    } else {
+      oneOf.head
+    }
   }
 
   private def randomPair = {

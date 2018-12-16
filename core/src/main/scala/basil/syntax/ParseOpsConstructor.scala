@@ -33,7 +33,7 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
     }
 
     def getAll[I](alls: FreeParseOps[ParseTree, I]): ExprEnd[ParseOps, F[I]] = {
-      ExprEnd(outer[I].cont(HFix[ParseOps, I](GetMultiple(alls))))
+      ExprEnd(outer[I].cont(HFix[ParseOps, I](GetProduct(alls))))
     }
 
     def getKey(key: String): PartiallyAppliedCont[ParseOps, F] = {

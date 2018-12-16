@@ -7,6 +7,7 @@ import cats.implicits._
 import org.json4s.JsonDSL._
 import org.json4s._
 import org.json4s.native.JsonMethods.{pretty, render}
+import org.scalacheck.Gen
 import org.scalatest.prop.GeneratorDrivenPropertyChecks
 import org.scalatest.{MustMatchers, WordSpec}
 
@@ -28,6 +29,9 @@ abstract class ParseSpec[F[_]: Functor]
 
   implicit class FOps[I, A](f: F[(I, A)]) {
     def getVal: I = getLast(f.map(_._1))
+  }
+  implicit class GenOps[A](gen: Gen[A]) {
+    def branch: Gen[(A, A)] = gen.map(s => s -> s)
   }
 
   "parser" should {
@@ -82,12 +86,12 @@ abstract class ParseSpec[F[_]: Functor]
     }
     "parse random JS" in new PContext[F] {
       forAll(opsJsGen(5)) {
-        case (ops, js, extracted) =>
-          val jsStr = pretty(render(js)).toCharArray
+        case (ops, inputJS, expected) =>
+          val jsStr = pretty(render(inputJS)).toCharArray
 
           val decoded = parseJSStream(ops, liftF(jsStr)).getVal
 
-          decoded mustBe extracted
+          decoded mustBe expected
       }
     }
     "parse partial array" in new PContext[F] {

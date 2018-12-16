@@ -3,12 +3,13 @@ package basil.parser
 import basil.data._
 import basil.typeclass.TakeOne._
 import basil.typeclass.{Cons, TakeOne}
+import cats.data.NonEmptyList
 import cats.free.FreeApplicative
 import cats.instances.char._
 import cats.kernel.Monoid
+import cats.syntax.applicativeError._
 import cats.syntax.flatMap._
 import cats.syntax.functor._
-import cats.syntax.applicativeError._
 import cats.{Applicative, MonadError, ~>}
 
 /**
@@ -415,10 +416,31 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     all.foldMap(parsing)
   }
 
+  private def parseOneOf[I](oneOf: NonEmptyList[Parse[I]]): Parse[I] = { path => src =>
+    val h = oneOf.head
+    oneOf.toList match {
+      case Nil => h(path)(src)
+      case nonEmpty =>
+        h(path)(src).recoverWith {
+          case _ => parseOneOf(NonEmptyList.fromListUnsafe(nonEmpty))(path)(src)
+        }
+    }
+
+  }
+
   private def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
     parse(path)(src)
       .map[(Option[I], CharSource)] {
-        case (i, next) => Some(i) -> next
+        case (i, next) =>
+          // WARNING: runtime flattening of None
+          // We dont flatten nested Some (eg. Some(Some(x)) => Some(x))
+          // because that would break the type
+          // ie. None <: Option[Option[Option[?]]] is generally true
+          // but Some(x) <: Option[Option[Option[?]]] is not
+          i match {
+            case None => None    -> next
+            case _    => Some(i) -> next
+          }
       }
       .recover {
         case _ => None -> src
@@ -427,16 +449,18 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
 
   val parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
     override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
-      fa match {
-        case GetString                    => parseString
-        case GetBool                      => parseBoolean
-        case GetNum(t)                    => parseNumber(t)
-        case getN: GetN[Parse, i]         => parseArrayItem(getN.n, getN.next)
-        case getK: GetKey[Parse, i]       => parseObj(getK.key, getK.next)
-        case GetMultiple(all)             => parseProduct(all)
-        case getOpt: GetOpt[Parse, i]     => parseOptional(getOpt.next)
-        case getOpt: GetOptFlat[Parse, i] => getOpt.next
+      val parseA = fa match {
+        case GetString                => parseString
+        case GetBool                  => parseBoolean
+        case GetNum(t)                => parseNumber(t)
+        case getN: GetN[Parse, i]     => parseArrayItem(getN.n, getN.next)
+        case getK: GetKey[Parse, i]   => parseObj(getK.key, getK.next)
+        case GetProduct(all)          => parseProduct(all)
+        case GetSum(oneOf)            => parseOneOf(oneOf)
+        case getOpt: GetOpt[Parse, i] => parseOptional(getOpt.next)
       }
+      // is this harmful??
+      parseA.asInstanceOf[Parse[A]]
     }
   }
 }
