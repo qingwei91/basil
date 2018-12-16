@@ -5,11 +5,11 @@ import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
 import io.circe.parser._
-import io.circe.syntax._
+import io.circe.generic.auto._
 import org.openjdk.jmh.annotations.Benchmark
 
 sealed trait ADTBase                 extends Product with Serializable
-case class X(a: Int)                 extends ADTBase
+case class X(a: Double)              extends ADTBase
 case class Y(b: String)              extends ADTBase
 case class Z(l: ADTBase, r: ADTBase) extends ADTBase
 
@@ -23,7 +23,7 @@ class ADTBenchmark {
 
   @Benchmark
   def basilRead() = {
-    Parser.parseString(Start.getType[Z].eval, jsonString1).get
+    Parser.parseString(Start.getType[ADTBase].eval, jsonString1).get
   }
 
   @Benchmark
