@@ -14,9 +14,9 @@ Json from `Array[Char]` is not supported now because Array cannot form a Monad t
 
 ```scala
 libraryDependencies += Seq(
-    "io.github.qingwei91" %% "basil-core"   % "0.0.2",
-    "io.github.qingwei91" %% "basil-derive" % "0.0.2",
-    "io.github.qingwei91" %% "basil-fs2"    % "0.0.2"
+    "io.github.qingwei91" %% "basil-core"   % "0.0.3",
+    "io.github.qingwei91" %% "basil-derive" % "0.0.3",
+    "io.github.qingwei91" %% "basil-fs2"    % "0.0.3"
 )
 ```
 
