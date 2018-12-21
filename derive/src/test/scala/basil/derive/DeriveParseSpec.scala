@@ -1,6 +1,8 @@
 package basil.derive
 
 import basil.ParseTree
+import basil.data.ParseOps.NestedParseOpsFunctor
+import basil.derive.DeriveParseOps._
 import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
@@ -29,8 +31,6 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
     }
 
   "Able to derive ParseOp for nested case class" in {
-    import DeriveParseOps._
-
     val what = Start.getType[Order].eval
     val js = ("id" -> "hoho") ~
       ("size" -> "20") ~
@@ -44,5 +44,17 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
     val res      = Parser.parseString(what, jsString)
 
     res mustBe Success(Order("hoho", "20", Person("Qing", 20, Married, Some("hoho"))))
+  }
+
+  sealed trait Dir
+  case class Left(i: String)      extends Dir
+  case class Right(i: String)     extends Dir
+  case class More(a: Dir, b: Dir) extends Dir
+
+  "Able to derive recursive ADT" in {
+    val x = Start.getType[Dir].eval
+
+    Parser.parseString(x, "sss")
+    println(x)
   }
 }

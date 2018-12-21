@@ -3,6 +3,7 @@ package basil.syntax
 import basil.data._
 import basil.{FreeParseOps, ParseTree}
 import cats.Id
+import cats.free.FreeApplicative
 import cats.free.FreeApplicative.lift
 
 object ParseOpsConstructor extends FreeParseOpsInstances {
@@ -32,7 +33,7 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
       ExprEnd(outer[I].cont(X))
     }
 
-    def getAll[I](alls: FreeParseOps[ParseTree, I]): ExprEnd[ParseOps, F[I]] = {
+    def getAll[I](alls: FreeApplicative[ParseTree, I]): ExprEnd[ParseOps, F[I]] = {
       ExprEnd(outer[I].cont(HFix[ParseOps, I](GetProduct(alls))))
     }
 

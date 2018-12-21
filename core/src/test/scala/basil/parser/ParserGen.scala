@@ -1,5 +1,7 @@
 package basil.parser
 import basil.data._
+import basil.typeclass.Lazy
+import cats.arrow.FunctionK
 import cats.data.NonEmptyList
 import cats.free.FreeApplicative
 import cats.{Applicative, ~>}
@@ -155,7 +157,7 @@ trait ParserGen {
           case GetBool           => boolGen.map(x => x -> x.values)
           case GetN(n, next)     => jsArrGen(n, next)
           case GetKey(key, next) => jsObjGen(key, next)
-          case GetProduct(all)   => productJSGen(all).asInstanceOf[ObjExpectedGen[A]]
+          case GetProduct(all)   => all.foldMap(FunctionK.id)
           case GetSum(oneOf)     => oneOfJSGen(oneOf)
 
           case getOpt: GetOpt[ObjExpectedGen, a] => optionGen(getOpt.next)
@@ -169,19 +171,19 @@ trait ParserGen {
 
   private val specialChar = Gen.oneOf("\\b", "\\r", "\\f", "\\\\", "\\/")
 
-  private def productJSGen[A](
+  def productJSGen[A](
       all: FreeApplicative[ParseOps[ObjExpectedGen, ?], A]): ObjExpectedGen[A] = {
     all.foldMap(gen)
   }
 
-  private def oneOfJSGen[A](oneOf: NonEmptyList[ObjExpectedGen[A]]): ObjExpectedGen[A] = {
+  private def oneOfJSGen[A](oneOf: NonEmptyList[Lazy[ObjExpectedGen[A]]]): ObjExpectedGen[A] = {
     val size = oneOf.size
 
     if (size >= 2) {
-      val rest = oneOf.tail
-      Gen.oneOf(oneOf.head, rest.head, rest.tail: _*)
+      val rest = oneOf.tail.map(_.value)
+      Gen.oneOf(oneOf.head.value, rest.head, rest.tail: _*)
     } else {
-      oneOf.head
+      oneOf.head.value
     }
   }
 

@@ -2,9 +2,9 @@ package basil.parser
 
 import basil.data._
 import basil.typeclass.TakeOne._
-import basil.typeclass.{Cons, TakeOne}
+import basil.typeclass.{Cons, Lazy, TakeOne}
+import cats.arrow.FunctionK
 import cats.data.NonEmptyList
-import cats.free.FreeApplicative
 import cats.instances.char._
 import cats.kernel.Monoid
 import cats.syntax.applicativeError._
@@ -403,25 +403,21 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     override def ap[A, B](ff: Parse[A => B])(fa: Parse[A]): Parse[B] = { path => src =>
       for {
         pair1     <- ff(path)(src)
-        (a2b, _)  = pair1
+        (fn, _)  = pair1
         pair2     <- fa(path)(src)
-        (a, rest) = pair2
+        (a, restSource) = pair2
       } yield {
-        a2b(a) -> rest
+        fn(a) -> restSource
       }
     }
   }
 
-  private def parseProduct[I](all: FreeApplicative[ParseOps[Parse, ?], I]): Parse[I] = {
-    all.foldMap(parsing)
-  }
-
-  private def parseOneOf[I](oneOf: NonEmptyList[Parse[I]]): Parse[I] = { path => src =>
+  private def parseOneOf[I](oneOf: NonEmptyList[Lazy[Parse[I]]]): Parse[I] = { path => src =>
     val h = oneOf.head
-    oneOf.tail.toList match {
-      case Nil => h(path)(src)
+    oneOf.tail match {
+      case Nil => h.value(path)(src)
       case nonEmpty =>
-        h(path)(src).recoverWith {
+        h.value(path)(src).recoverWith {
           case _ => parseOneOf(NonEmptyList.fromListUnsafe(nonEmpty))(path)(src)
         }
     }
@@ -455,7 +451,7 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case GetNum(t)                   => parseNumber(t)
         case getN: GetN[Parse, i]        => parseArrayItem(getN.n, getN.next)
         case getK: GetKey[Parse, i]      => parseObj(getK.key, getK.next)
-        case GetProduct(all)             => parseProduct(all)
+        case GetProduct(all)             => all.foldMap(FunctionK.id)
         case GetSum(oneOf)               => parseOneOf(oneOf)
         case getOpt: GetOpt[Parse, i]    => parseOptional(getOpt.next)
         case mapped: Mapped[Parse, h, A] => mapped.fi.map(mapped.fn)
