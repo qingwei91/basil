@@ -8,7 +8,7 @@ The main idea is to describe the data you need from json as recursive data struc
 
 Json from `Array[Char]` is not supported now because Array cannot form a Monad trivially, one could convert `Array[Char]` to `List[Char]` for now.
 
-**Warning**: This library is not production ready yet.
+**Warning**: This library is an experiment, it is not production ready.
 
 ### To try it out
 
@@ -32,7 +32,7 @@ libraryDependencies += Seq(
 
 Extract primitive value from json
 ```scala
-import basil.data.ParseOpsConstructor._
+import basil.syntax.ParseOpsConstructor._
 import basil.parser.implicits._
 import basil.parser._
 
@@ -41,7 +41,7 @@ val completeJS = s"""{"key1": "valueA", "key2": 2020.111}"""
 val inCompleteJS = s"""{"key1": "valueA", "key2":2020.111, "key3":[200,]}"""
 
 
-val parseOps = Start.getKey("key2").getNum.t
+val parseOps = Start.getKey("key2").getNum.eval
 
 val result = Parser.parseJS(parseOps, completeJS.toCharArray.toList).head.map(_._1)
 
@@ -50,6 +50,7 @@ result == 2020.111
 ```
 
 Extract case class from json
+(Note: recursive ADT is not supported yet)
 ```scala
 case class Person(name: String, age: Double)
 case class Order(id: String, size: String, belongsTo: Person)
@@ -57,7 +58,7 @@ case class Order(id: String, size: String, belongsTo: Person)
 // this imports support deriving parse function for case class
 import basil.derive.DeriveParseOps._
 
-val what     = Start.getI[Order].t
+val what     = Start.getI[Order].eval
 val js       =
     ("id" -> "hoho") ~
     ("size" -> "20") ~
