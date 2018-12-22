@@ -18,8 +18,8 @@ lazy val core = project
   .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
-      "org.typelevel" %% "cats-core" % "1.4.0",
-      "org.typelevel" %% "cats-free" % "1.4.0"
+      "org.typelevel" %% "cats-core" % "1.5.0",
+      "org.typelevel" %% "cats-free" % "1.5.0"
     ) ++ testDeps
   )
 

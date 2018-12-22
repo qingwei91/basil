@@ -2,7 +2,7 @@ package basil.parser
 import basil.data._
 import basil.typeclass.Lazy
 import cats.arrow.FunctionK
-import cats.data.NonEmptyList
+import cats.data.NonEmptyMap
 import cats.free.FreeApplicative
 import cats.{Applicative, ~>}
 import org.json4s.{JArray, JBool, JDouble, JNull, JObject, JString, JValue}
@@ -171,19 +171,20 @@ trait ParserGen {
 
   private val specialChar = Gen.oneOf("\\b", "\\r", "\\f", "\\\\", "\\/")
 
-  def productJSGen[A](
-      all: FreeApplicative[ParseOps[ObjExpectedGen, ?], A]): ObjExpectedGen[A] = {
+  def productJSGen[A](all: FreeApplicative[ParseOps[ObjExpectedGen, ?], A]): ObjExpectedGen[A] = {
     all.foldMap(gen)
   }
 
-  private def oneOfJSGen[A](oneOf: NonEmptyList[Lazy[ObjExpectedGen[A]]]): ObjExpectedGen[A] = {
-    val size = oneOf.size
+  private def oneOfJSGen[A](
+      oneOf: NonEmptyMap[String, Lazy[ObjExpectedGen[A]]]): ObjExpectedGen[A] = {
+    val subtypes = oneOf.toSortedMap.values.toList
+    val size     = subtypes.length
 
     if (size >= 2) {
-      val rest = oneOf.tail.map(_.value)
-      Gen.oneOf(oneOf.head.value, rest.head, rest.tail: _*)
+      val rest = subtypes.tail.map(_.value)
+      Gen.oneOf(subtypes.head.value, rest.head, rest.tail: _*)
     } else {
-      oneOf.head.value
+      subtypes.head.value
     }
   }
 
