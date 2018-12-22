@@ -31,9 +31,7 @@ final case class GetSum[F[_], I](oneOf: NonEmptyMap[String, Lazy[F[I]]]) extends
 
 final case class GetProduct[F[_], I](allOf: FreeApplicative[F, I]) extends ParseOps[F, I]
 
-// this feel like a hack, I need the ability to map over type I
-// but I dont know how to achieve that without introducing yet another
-// case class
+// this feel like a hack, not sure if we still need this
 final case class Mapped[F[_], H, I](fi: F[H], fn: H => I) extends ParseOps[F, I]
 
 object ParseOps {

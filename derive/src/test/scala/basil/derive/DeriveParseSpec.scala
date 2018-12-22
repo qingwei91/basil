@@ -1,12 +1,9 @@
 package basil.derive
 
-import basil.ParseTree
-import basil.data.ParseOps.NestedParseOpsFunctor
 import basil.derive.DeriveParseOps._
 import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
-import cats.syntax.functor._
 import org.json4s.JsonDSL._
 import org.json4s.native.JsonMethods.{pretty, render}
 import org.scalatest.{MustMatchers, WordSpec}
@@ -21,15 +18,6 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
   case class Person(name: String, age: Double, married: Status, life: Option[String])
   case class Order(id: String, size: String, belongsTo: Person)
 
-  implicit val StringIsMarried: ParseTree[Single.type] = getString
-    .map(_ => Single)
-
-  implicit val BoolIsMarried: ParseTree[Married.type] = getBool
-    .map {
-      case true  => Married
-      case false => Married
-    }
-
   "Able to derive ParseOp for nested case class" in {
     val what = Start.getType[Order].eval
     val js = ("id" -> "hoho") ~
@@ -37,7 +25,7 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
       ("belongsTo" ->
         ("name"      -> "Qing") ~
           ("age"     -> 20) ~
-          ("married" -> true) ~
+          ("married" -> ("_discriminator" -> "Married")) ~
           ("life"    -> "hoho"))
 
     val jsString = pretty(render(js))
@@ -52,10 +40,17 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
   case class More(a: Dir, b: Dir) extends Dir
 
   "Able to derive recursive ADT" in {
-    val x   = Start.getType[Dir].eval
-    val js  = ("a" -> ("i" -> "left....")) ~ ("b" -> ("i" -> "left...."))
-    val _ = pretty(render(js))
-    val r = Parser.parseString(x, "sss")
-    println(r)
+    val tree = Start.getType[Dir].eval
+    val js = ("_discriminator" -> "More") ~ ("a" -> (
+      ("_discriminator" -> "Left") ~
+        ("i"            -> "left....")
+    )) ~ ("b" -> (
+      ("_discriminator" -> "Right") ~
+        ("i"            -> "left....")
+    ))
+
+    val str = pretty(render(js))
+    val r   = Parser.parseString(tree, str)
+    r mustBe Success(More(Left("left...."), Right("left....")))
   }
 }
