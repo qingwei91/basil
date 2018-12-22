@@ -1,7 +1,7 @@
 package basil.data
 
 import basil.typeclass.Lazy
-import cats.data.NonEmptyList
+import cats.data.NonEmptyMap
 import cats.free.FreeApplicative
 import cats.{Functor, ~>}
 
@@ -27,7 +27,7 @@ final case class GetKey[F[_], I](key: String, next: F[I]) extends ParseOps[F, I]
   */
 final case class GetOpt[F[_], I](next: F[I]) extends ParseOps[F, Option[I]]
 
-final case class GetSum[F[_], I](oneOf: NonEmptyList[Lazy[F[I]]]) extends ParseOps[F, I]
+final case class GetSum[F[_], I](oneOf: NonEmptyMap[String, Lazy[F[I]]]) extends ParseOps[F, I]
 
 final case class GetProduct[F[_], I](allOf: FreeApplicative[F, I]) extends ParseOps[F, I]
 

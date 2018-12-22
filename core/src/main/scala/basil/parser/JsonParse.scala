@@ -4,8 +4,7 @@ import basil.data._
 import basil.typeclass.TakeOne._
 import basil.typeclass.{Cons, Lazy, TakeOne}
 import cats.arrow.FunctionK
-import cats.data.NonEmptyList
-import cats.free.FreeApplicative
+import cats.data.NonEmptyMap
 import cats.instances.char._
 import cats.kernel.Monoid
 import cats.syntax.applicativeError._
@@ -413,16 +412,15 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  private def parseOneOf[I](oneOf: NonEmptyList[Lazy[Parse[I]]]): Parse[I] = { path => src =>
-    val h = oneOf.head
-    oneOf.tail match {
-      case Nil => h.value(path)(src)
-      case nonEmpty =>
-        h.value(path)(src).recoverWith {
-          case _ => parseOneOf(NonEmptyList.fromListUnsafe(nonEmpty))(path)(src)
+  private def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
+    parseObj("_discriminator", parseString)(path)(src).flatMap {
+      case (key, _) =>
+        oneOf(key) match {
+          case Some(parseFn) => parseFn.value(path)(src)
+          case None =>
+            ME.raiseError[(I, CharSource)](ParseFailure(s"Cannot parse object with type=$key"))
         }
     }
-
   }
 
   private def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>

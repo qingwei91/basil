@@ -3,12 +3,15 @@ package basil.derive
 import basil.ParseTree
 import basil.data._
 import basil.typeclass.Lazy
-import cats.data.NonEmptyList
+import cats.data.NonEmptyMap
+import cats.instances.string._
 import cats.free.FreeApplicative
 import cats.free.FreeApplicative.lift
 import cats.instances.list._
 import cats.syntax.traverse._
 import magnolia.{CaseClass, Magnolia, SealedTrait}
+
+import scala.collection.immutable.SortedMap
 
 object DeriveParseOps {
   type Typeclass[T] = ParseTree[T]
@@ -28,12 +31,16 @@ object DeriveParseOps {
 
   def dispatch[T](ctx: SealedTrait[Typeclass, T]): Typeclass[T] = {
     val possibleTypeclasses = ctx.subtypes.toList.map { subtype =>
-      Lazy(
-        subtype.typeclass.asInstanceOf[Typeclass[T]]
-      )
+      subtype.typeName.short ->
+        Lazy(
+          subtype.typeclass.asInstanceOf[Typeclass[T]]
+        )
     }
 
-    HFix[ParseOps, T](GetSum(NonEmptyList.fromListUnsafe(possibleTypeclasses)))
+    val sorted = SortedMap
+      .empty[String, Lazy[Typeclass[T]]] ++ possibleTypeclasses
+
+    HFix[ParseOps, T](GetSum(NonEmptyMap.fromMapUnsafe(sorted)))
   }
 
   implicit def gen[T]: Typeclass[T] = macro Magnolia.gen[T]
