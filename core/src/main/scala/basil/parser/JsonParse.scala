@@ -5,6 +5,7 @@ import basil.typeclass.TakeOne._
 import basil.typeclass.{Cons, Lazy, TakeOne}
 import cats.arrow.FunctionK
 import cats.data.NonEmptyList
+import cats.free.FreeApplicative
 import cats.instances.char._
 import cats.kernel.Monoid
 import cats.syntax.applicativeError._
@@ -402,9 +403,9 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
     override def ap[A, B](ff: Parse[A => B])(fa: Parse[A]): Parse[B] = { path => src =>
       for {
-        pair1     <- ff(path)(src)
-        (fn, _)  = pair1
-        pair2     <- fa(path)(src)
+        pair1           <- ff(path)(src)
+        (fn, _)         = pair1
+        pair2           <- fa(path)(src)
         (a, restSource) = pair2
       } yield {
         fn(a) -> restSource
@@ -451,10 +452,10 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case GetNum(t)                   => parseNumber(t)
         case getN: GetN[Parse, i]        => parseArrayItem(getN.n, getN.next)
         case getK: GetKey[Parse, i]      => parseObj(getK.key, getK.next)
-        case GetProduct(all)             => all.foldMap(FunctionK.id)
         case GetSum(oneOf)               => parseOneOf(oneOf)
         case getOpt: GetOpt[Parse, i]    => parseOptional(getOpt.next)
         case mapped: Mapped[Parse, h, A] => mapped.fi.map(mapped.fn)
+        case GetProduct(all)             => all.foldMap(FunctionK.id)
       }
       // is this harmful??
       parseA.asInstanceOf[Parse[A]]

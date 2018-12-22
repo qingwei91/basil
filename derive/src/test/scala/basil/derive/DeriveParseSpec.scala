@@ -52,9 +52,10 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
   case class More(a: Dir, b: Dir) extends Dir
 
   "Able to derive recursive ADT" in {
-    val x = Start.getType[Dir].eval
-
-    Parser.parseString(x, "sss")
-    println(x)
+    val x   = Start.getType[Dir].eval
+    val js  = ("a" -> ("i" -> "left....")) ~ ("b" -> ("i" -> "left...."))
+    val _ = pretty(render(js))
+    val r = Parser.parseString(x, "sss")
+    println(r)
   }
 }
