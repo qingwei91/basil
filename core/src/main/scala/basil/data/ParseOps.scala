@@ -1,6 +1,7 @@
 package basil.data
 
-import cats.data.NonEmptyList
+import basil.typeclass.Lazy
+import cats.data.NonEmptyMap
 import cats.free.FreeApplicative
 import cats.{Functor, ~>}
 
@@ -26,14 +27,11 @@ final case class GetKey[F[_], I](key: String, next: F[I]) extends ParseOps[F, I]
   */
 final case class GetOpt[F[_], I](next: F[I]) extends ParseOps[F, Option[I]]
 
-final case class GetSum[F[_], I](oneOf: NonEmptyList[F[I]]) extends ParseOps[F, I]
+final case class GetSum[F[_], I](oneOf: NonEmptyMap[String, Lazy[F[I]]]) extends ParseOps[F, I]
 
-final case class GetProduct[F[_], I](allOf: FreeApplicative[ParseOps[F, ?], I])
-    extends ParseOps[F, I]
+final case class GetProduct[F[_], I](allOf: FreeApplicative[F, I]) extends ParseOps[F, I]
 
-// this feel like a hack, I need the ability to map over type I
-// but I dont know how to achieve that without introducing yet another
-// case class
+// this feel like a hack, not sure if we still need this
 final case class Mapped[F[_], H, I](fi: F[H], fn: H => I) extends ParseOps[F, I]
 
 object ParseOps {
@@ -47,8 +45,8 @@ object ParseOps {
             case num: GetNum            => num
             case getN: GetN[M, A]       => GetN(getN.n, nt(getN.next))
             case getK: GetKey[M, A]     => GetKey(getK.key, nt(getK.next))
-            case getM: GetProduct[M, A] => GetProduct(getM.allOf.compile(self))
-            case getS: GetSum[M, A]     => GetSum(getS.oneOf.map(a => nt(a)))
+            case getM: GetProduct[M, A] => GetProduct(getM.allOf.compile(nt))
+            case getS: GetSum[M, A]     => GetSum(getS.oneOf.map(a => a.map(ma => nt(ma))))
 
             case getO: GetOpt[M, a] with ParseOps[M, A] =>
               GetOpt[N, a](nt(getO.next)).asInstanceOf[ParseOps[N, A]]

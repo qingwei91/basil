@@ -3,6 +3,7 @@ package basil.parser
 import basil.data._
 import basil.syntax.ParseOpsConstructor._
 import cats.Functor
+import cats.free.FreeApplicative
 import cats.implicits._
 import org.json4s.JsonDSL._
 import org.json4s._
@@ -118,11 +119,16 @@ abstract class ParseSpec[F[_]: Functor]
       val obj = ("name" -> "Qing") ~
         ("age"  -> 201) ~
         ("love" -> true) ~ ("nest" -> ("down" -> 20))
+
+      def wrap[A](o: HFix[ParseOps, A]): FreeApplicative[HFix[ParseOps, ?], A] = {
+        FreeApplicative.lift(o)
+      }
+
       val ops = Start.getAll(
         (
-          getKeyFree("name", getString),
-          getKeyFree("age", getNum),
-          getKeyFree("nest", Start.getKey("down").getNum.eval)
+          wrap(Start.getKey("name").getString.eval),
+          wrap(Start.getKey("age").getNum.eval),
+          wrap(Start.getKey("nest").getKey("down").getNum.eval)
         ).mapN {
           case (a, b, c) => (a, b, c)
         }

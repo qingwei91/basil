@@ -36,6 +36,9 @@ object instances {
           inner.traverse[Try, F[B]](a => f(a)).map(_.flatten)
 
       }
+
+      // warning: this is not tailrec
+      // todo: FIx me
       override def tailRecM[A, B](a: A)(f: A => TryF[F, Either[A, B]]): TryF[F, B] = {
 
         def loop(i: TryF[F, Either[A, B]]): TryF[F, B] = {

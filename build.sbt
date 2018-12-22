@@ -18,8 +18,8 @@ lazy val core = project
   .settings(publishSettings)
   .settings(
     libraryDependencies ++= Seq(
-      "org.typelevel" %% "cats-core" % "1.4.0",
-      "org.typelevel" %% "cats-free" % "1.4.0"
+      "org.typelevel" %% "cats-core" % "1.5.0",
+      "org.typelevel" %% "cats-free" % "1.5.0"
     ) ++ testDeps
   )
 
@@ -50,18 +50,19 @@ lazy val derive = project
 
 lazy val benchmark = project
   .in(file("benchmark"))
-  .dependsOn(core, derive)
   .settings(commons)
   .enablePlugins(JmhPlugin)
   .settings(
     libraryDependencies ++= Seq(
-      "com.lihaoyi"       %% "upickle"              % "0.7.1",
-      "com.dslplatform"   %% "dsl-json-scala"       % "1.8.4",
-      "com.jsoniter"      % "jsoniter"              % "0.9.23",
-      "io.circe"          %% "circe-generic"        % "0.10.1",
-      "io.circe"          %% "circe-generic-extras" % "0.10.1",
-      "io.circe"          %% "circe-parser"         % "0.10.1",
-      "com.typesafe.play" %% "play-json"            % "2.7.0-RC2"
+      "io.github.qingwei91" %% "basil-core"           % "0.0.3",
+      "io.github.qingwei91" %% "basil-derive"         % "0.0.3",
+      "com.lihaoyi"         %% "upickle"              % "0.7.1",
+      "com.dslplatform"     %% "dsl-json-scala"       % "1.8.4",
+      "com.jsoniter"        % "jsoniter"              % "0.9.23",
+      "io.circe"            %% "circe-generic"        % "0.10.1",
+      "io.circe"            %% "circe-generic-extras" % "0.10.1",
+      "io.circe"            %% "circe-parser"         % "0.10.1",
+      "com.typesafe.play"   %% "play-json"            % "2.7.0-RC2"
     ) ++ testDeps
   )
 
