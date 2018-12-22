@@ -21,8 +21,6 @@ case class Z(l: ADTBase, r: ADTBase) extends ADTBase
 class ADTBenchmark {
   val obj: ADTBase        = Z(X(1), Y("VVV"))
   val jsonString1: String = """{"type":"Z","l":{"type":"X","a":1},"r":{"type":"Y","b":"VVV"}}"""
-  val jsonString2: String = """{"l":{"a":1,"type":"X"},"r":{"b":"VVV","type":"Y"},"type":"Z"}"""
-  val jsonString3: String = """{"r":{"b":"VVV","type":"Y"},"type":"Z","l":{"a":1,"type":"X"}}"""
 
   import DeriveParseOps._
 

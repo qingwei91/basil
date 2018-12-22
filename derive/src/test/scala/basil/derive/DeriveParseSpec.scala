@@ -25,7 +25,7 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
       ("belongsTo" ->
         ("name"      -> "Qing") ~
           ("age"     -> 20) ~
-          ("married" -> ("_discriminator" -> "Married")) ~
+          ("married" -> ("type" -> "Married")) ~
           ("life"    -> "hoho"))
 
     val jsString = pretty(render(js))
@@ -41,11 +41,11 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
 
   "Able to derive recursive ADT" in {
     val tree = Start.getType[Dir].eval
-    val js = ("_discriminator" -> "More") ~ ("a" -> (
-      ("_discriminator" -> "Left") ~
+    val js = ("type" -> "More") ~ ("a" -> (
+      ("type" -> "Left") ~
         ("i"            -> "left....")
     )) ~ ("b" -> (
-      ("_discriminator" -> "Right") ~
+      ("type" -> "Right") ~
         ("i"            -> "left....")
     ))
 

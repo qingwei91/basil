@@ -27,6 +27,8 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
                                     Monoid: Monoid[Source[Char]],
                                     Cons: Cons[Source]) {
 
+  val discriminatorField: String = "type"
+
   type CharSource = Source[Char]
 
   type Parse[I] = Vector[PPath] => CharSource => Source[(I, CharSource)]
@@ -413,7 +415,7 @@ abstract class JsonParse[Source[_]](implicit TakeOne: TakeOne[Source],
   }
 
   private def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
-    parseObj("_discriminator", parseString)(path)(src).flatMap {
+    parseObj(discriminatorField, parseString)(path)(src).flatMap {
       case (key, _) =>
         oneOf(key) match {
           case Some(parseFn) => parseFn.value(path)(src)
