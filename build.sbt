@@ -54,8 +54,8 @@ lazy val benchmark = project
   .enablePlugins(JmhPlugin)
   .settings(
     libraryDependencies ++= Seq(
-      "io.github.qingwei91" %% "basil-core"           % "0.0.3",
-      "io.github.qingwei91" %% "basil-derive"         % "0.0.3",
+      "io.github.qingwei91" %% "basil-core"           % "0.0.4",
+      "io.github.qingwei91" %% "basil-derive"         % "0.0.4",
       "com.lihaoyi"         %% "upickle"              % "0.7.1",
       "com.dslplatform"     %% "dsl-json-scala"       % "1.8.4",
       "com.jsoniter"        % "jsoniter"              % "0.9.23",
