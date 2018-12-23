@@ -122,6 +122,15 @@ I recommend this [video](https://www.youtube.com/watch?v=oRLkb6mqvVM) if you are
 
 This library also make use of [magnolia](https://github.com/propensive/magnolia) project to derive ParseOps typeclass for case classes
 
+### Release
+
+Release is done with [sbt-sonatype](https://github.com/xerial/sbt-sonatype)
+
+```
+sbt publishSigned
+sbt sonatypeRelease
+```
+
 ### Next
 
 * Benchmark
