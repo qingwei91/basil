@@ -2,7 +2,6 @@ package basil.parser
 
 import basil.data._
 import basil.typeclass.Lazy
-import cats.arrow.FunctionK
 import cats.data.NonEmptyMap
 import cats.implicits._
 import cats.{Applicative, MonadError, ~>}
@@ -483,7 +482,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     }
   }
 
-  private def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
+  def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
     parseObj(discriminatorField, parseString)(path)(src).flatMap {
       case (key, _) =>
         oneOf(key) match {
@@ -494,7 +493,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     }
   }
 
-  private def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
+  def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
     parse(path)(src)
       .map[(Option[I], CharSource)] {
         case (i, next) =>
@@ -513,21 +512,5 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
       }
   }
 
-  val parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
-    override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
-      val parseA = fa match {
-        case GetString                   => parseString
-        case GetBool                     => parseBoolean
-        case GetNum(t)                   => parseNumber(t)
-        case getN: GetN[Parse, i]        => parseArrayItem(getN.n, getN.next)
-        case getK: GetKey[Parse, i]      => parseObj(getK.key, getK.next)
-        case GetSum(oneOf)               => parseOneOf(oneOf)
-        case getOpt: GetOpt[Parse, i]    => parseOptional(getOpt.next)
-        case mapped: Mapped[Parse, h, A] => mapped.fi.map(mapped.fn)
-        case GetProduct(all)             => all.foldMap(FunctionK.id)
-      }
-      // is this harmful??
-      parseA.asInstanceOf[Parse[A]]
-    }
-  }
+  val parsing: ParseOps[Parse, ?] ~> Parse = parsingM
 }

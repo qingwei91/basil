@@ -3,7 +3,6 @@ package basil.parser
 import basil.data._
 import basil.typeclass.TakeOne._
 import basil.typeclass.{Cons, Lazy, TakeOne}
-import cats.arrow.FunctionK
 import cats.data.NonEmptyMap
 import cats.instances.char._
 import cats.kernel.Monoid
@@ -413,7 +412,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  private def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
+  def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
     parseObj(discriminatorField, parseString)(path)(src).flatMap {
       case (key, _) =>
         oneOf(key) match {
@@ -424,7 +423,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  private def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
+  def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
     parse(path)(src)
       .map[(Option[I], CharSource)] {
         case (i, next) =>
@@ -442,22 +441,6 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case _ => None -> src
       }
   }
+  val parsing: ParseOps[Parse, ?] ~> Parse = parsingM
 
-  val parsing: ParseOps[Parse, ?] ~> Parse = new (ParseOps[Parse, ?] ~> Parse) {
-    override def apply[A](fa: ParseOps[Parse, A]): Parse[A] = {
-      val parseA = fa match {
-        case GetString                   => parseString
-        case GetBool                     => parseBoolean
-        case GetNum(t)                   => parseNumber(t)
-        case getN: GetN[Parse, i]        => parseArrayItem(getN.n, getN.next)
-        case getK: GetKey[Parse, i]      => parseObj(getK.key, getK.next)
-        case GetSum(oneOf)               => parseOneOf(oneOf)
-        case getOpt: GetOpt[Parse, i]    => parseOptional(getOpt.next)
-        case mapped: Mapped[Parse, h, A] => mapped.fi.map(mapped.fn)
-        case GetProduct(all)             => all.foldMap(FunctionK.id)
-      }
-      // is this harmful??
-      parseA.asInstanceOf[Parse[A]]
-    }
-  }
 }
