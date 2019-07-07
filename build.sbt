@@ -115,7 +115,8 @@ lazy val commons = Def.settings(
     "-Ywarn-unused:params", // Warn if a value parameter is unused.
     "-Ywarn-unused:patvars", // Warn if a variable bound in a pattern is unused.
     "-Ywarn-unused:privates", // Warn if a private member is unused.
-    "-Ywarn-value-discard" // Warn when non-Unit expression results are unused.
+    "-Ywarn-value-discard", // Warn when non-Unit expression results are unused.
+    "-Yrangepos"
   ),
   resolvers += Resolver.sonatypeRepo("releases"),
   addCompilerPlugin("org.spire-math"  %% "kind-projector" % "0.9.7"),
@@ -135,8 +136,10 @@ publishTo in ThisBuild := sonatypePublishTo.value
 dynverSonatypeSnapshots in ThisBuild := true
 
 lazy val testDeps = Seq(
-  "org.json4s"     %% "json4s-native" % "3.5.4"  % "test",
-  "com.lihaoyi"    %% "pprint"        % "0.5.3"  % "test",
-  "org.scalatest"  %% "scalatest"     % "3.0.1"  % "test",
-  "org.scalacheck" %% "scalacheck"    % "1.14.0" % "test"
+  "org.json4s"     %% "json4s-native"     % "3.5.4"  % "test",
+  "com.lihaoyi"    %% "pprint"            % "0.5.3"  % "test",
+  "org.scalatest"  %% "scalatest"         % "3.0.1"  % "test",
+  "org.specs2"     %% "specs2-core"       % "4.6.0"  % "test",
+  "org.specs2"     %% "specs2-scalacheck" % "4.6.0"  % "test",
+  "org.scalacheck" %% "scalacheck"        % "1.14.0" % "test"
 )

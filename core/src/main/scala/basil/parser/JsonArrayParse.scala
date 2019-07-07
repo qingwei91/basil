@@ -8,6 +8,8 @@ import cats.{Applicative, MonadError, ~>}
 
 import scala.util.Try
 
+import JsonArrayParse._
+
 /**
   * TODO: model Input as `(Array[Char], Int)`
   * this will avoid having to inject `Array[Char]` when using this
@@ -17,21 +19,22 @@ import scala.util.Try
   * b) slice
   * c) isDefinedAtIndex
   */
-abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
-    implicit
-    ME: MonadError[F, ParseFailure],
-) extends JsonParse[Int, Lambda[A => F[(A, Int)]]] {
+abstract class JsonArrayParse[F[_]](
+    implicit ME: MonadError[F, ParseFailure],
+) extends JsonParse[Input, Output[F, ?]] {
 
   val discriminatorField: String = "type"
 
   // latest index
-  type CharSource = Int
+  type CharSource = Input
 
   type Pipe = CharSource => F[CharSource]
 
-  private def getChar(i: Int)(implicit path: Vector[PPath]): F[Char] = {
+  private def getChar(input: CharSource)(implicit path: Vector[PPath]): F[Char] = {
     ME.fromEither {
       try {
+
+        val (fullSource, i) = input
         Right(fullSource(i))
       } catch {
         case _: ArrayIndexOutOfBoundsException =>
@@ -40,8 +43,9 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     }
   }
 
-  private def getCharOpt(i: Int): F[Option[Char]] = {
+  private def getCharOpt(input: Input): F[Option[Char]] = {
     Try {
+      val (fullSource, i) = input
       Option(fullSource(i))
     }.fold(_ => None, identity).pure[F]
   }
@@ -52,19 +56,28 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     for {
       firstC <- getChar(latestI)
       result <- firstC match {
-                 case '"' => accJsString(latestI + 1)
+                 case '"' => accJsString(latestI.next)
                  case other =>
                    ME.raiseError[(String, Int)](
                      ParseFailure(s"""String should starts with ", but found $other""", path))
                }
-    } yield result
+    } yield {
+      val (str, next) = result
+      str -> src.pointTo(next)
+    }
   }
 
-  implicit class PointerOps(i: CharSource) {
+  implicit class PointerOps(input: CharSource) {
     def isFollowedBy(str: String): (Boolean, Int) = {
-      val slice = fullSource.slice(i, i + str.length)
+      val (fullSource, i) = input
+      val slice           = fullSource.slice(i, i + str.length)
       slice.sameElements(str.toCharArray) -> (i + str.length)
     }
+
+    def next: CharSource         = move(1)
+    def move(i: Int): CharSource = (input._1, input._2 + i)
+
+    def pointTo(i: Int): CharSource = input._1 -> i
   }
 
   val parseBoolean: Parse[Boolean] = { implicit path => src =>
@@ -85,7 +98,10 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
                            }
                  } yield inner
                }
-    } yield result
+    } yield {
+      val (str, next) = result
+      str -> src.pointTo(next)
+    }
   }
 
   /**
@@ -121,6 +137,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
         case (numChars, next) => numChars.mkString.toDouble -> next
       }
   }
+
   def parseArrayItem[I](n: Int, next: Parse[I]): Parse[I] = { implicit path => s =>
     def recurse(left: Int): Parse[I] = { implicit path => stream =>
       if (left == 0) {
@@ -129,7 +146,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
         for {
           skip1        <- skipOne(Comma)(path)(stream)
           skippedComma <- skipComma(path)(skipWS(skip1))
-          result       <- recurse(left - 1)(path)(skippedComma)
+          result       <- recurse(left - 1)(path)(skippedComma): F[(I, Input)]
         } yield {
           result
         }
@@ -138,7 +155,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     val skipped = skipWS(s)
 
     getChar(skipped).flatMap {
-      case '[' => recurse(n)(path \ n)(skipped + 1)
+      case '[' => recurse(n)(path \ n)(skipped.next)
       case u   => ME.raiseError(ParseFailure("[", u.toString, path \ n))
     }
   }
@@ -149,7 +166,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
         case (_, nextS) =>
           for {
             skippedOne <- skipOne(Comma)(path)(nextS)
-            dropComma  = skipWS(skippedOne) + 1
+            dropComma  = skipWS(skippedOne).next
             untilKey   <- skipUntilKey(path)(dropComma)
           } yield {
             untilKey
@@ -159,17 +176,22 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
 
     val skipped = skipWS(stream)
     val afterKeyF = getChar(skipped).flatMap {
-      case '{' => skipUntilKey(path \ k)(skipped + 1)
+      case '{' => skipUntilKey(path \ k)(skipped.next)
       case c   => ME.raiseError[CharSource](ParseFailure("{", c.toString, path))
     }
 
     for {
       afterKey <- afterKeyF
-      result   <- nextOp(path \ k)(afterKey)
+      result   <- nextOp(path \ k)(afterKey): F[(I, Input)]
     } yield {
       result
     }
   }
+
+  // wrapper type used when accumulating json string
+  // can be optimized by mutation?
+  private case class AccStringInput(i: Int, acc: Vector[Char], lastCharIsSpecial: Boolean)
+  private case class AccStringOutput(str: Vector[Char], next: Int)
 
   // todo: handle unicode ??? (maybe just dont support it)
   /**
@@ -183,11 +205,11 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     *
     * eg. Input = I am pretty", next...
     *     Output = (I am pretty -> Source(, next...))
-    * @param i
+    * @param input
     * @param path
     * @return
     */
-  private def accJsString(i: Int)(implicit path: Vector[PPath]): F[(String, Int)] = {
+  private def accJsString(input: CharSource)(implicit path: Vector[PPath]): F[(String, Int)] = {
 
     // lastCharIsSpecial - we need to know if last
     // char is special or not, so that we can
@@ -196,49 +218,48 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     // we should not treat the next char as part of
     // escape sequence
 
-    type Input  = (Int, Vector[Char], Boolean)
-    type Output = (Vector[Char], Int)
-
-    def recurse(a: Input): F[Either[Input, Output]] = {
-      val (s, acc, lastCharIsSpecial) = a
+    def recurse(a: AccStringInput): F[Either[AccStringInput, AccStringOutput]] = {
+      val AccStringInput(curPointer, acc, lastCharIsSpecial) = a
 
       val wasEscaped = !lastCharIsSpecial && acc.lastOption.contains('\\')
 
-      val next = s + 1
-      getChar(s).flatMap {
+      val next = curPointer + 1
+
+      getChar((input._1, curPointer)).flatMap {
         case '"' if wasEscaped =>
-          (next, acc.dropRight(1) :+ '"', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc.dropRight(1) :+ '"', true).asLeft[AccStringOutput].pure[F]
         case '/' if wasEscaped =>
-          (next, acc.dropRight(1) :+ '/', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc.dropRight(1) :+ '/', true).asLeft[AccStringOutput].pure[F]
         case 'b' if wasEscaped =>
-          (next, acc :+ 'b', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc :+ 'b', true).asLeft[AccStringOutput].pure[F]
         case 'f' if wasEscaped =>
-          (next, acc :+ 'f', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc :+ 'f', true).asLeft[AccStringOutput].pure[F]
         case 'n' if wasEscaped =>
-          (next, acc :+ 'n', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc :+ 'n', true).asLeft[AccStringOutput].pure[F]
         case 'r' if wasEscaped =>
-          (next, acc :+ 'r', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc :+ 'r', true).asLeft[AccStringOutput].pure[F]
         case 't' if wasEscaped =>
-          (next, acc :+ 't', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc :+ 't', true).asLeft[AccStringOutput].pure[F]
         case '\\' if wasEscaped =>
-          (next, acc.dropRight(1) :+ '\\', true).asLeft[Output].pure[F]
+          AccStringInput(next, acc.dropRight(1) :+ '\\', true).asLeft[AccStringOutput].pure[F]
         case oops if wasEscaped =>
           ME.raiseError(ParseFailure(s"Illegal escape sequence \\$oops", path))
-        case '"' => ME.pure((acc -> next).asRight[Input])
-        case c   => (next, acc :+ c, false).asLeft[Output].pure[F]
+        case '"' => ME.pure(AccStringOutput(acc, next).asRight[AccStringInput])
+        case c   => AccStringInput(next, acc :+ c, false).asLeft[AccStringOutput].pure[F]
       }
     }
 
-    ME.tailRecM((i, Vector.empty[Char], false))(recurse)
+    ME.tailRecM(AccStringInput(input._2, Vector.empty[Char], false))(recurse)
       .map {
-        case (acc, next) => acc.mkString -> next
+        case AccStringOutput(acc, next) => acc.mkString -> next
       }
   }
 
   private def skipWS(s: CharSource): CharSource = {
-    if (fullSource.isDefinedAt(s)) {
-      fullSource(s) match {
-        case whitespace(_) => skipWS(s + 1)
+    val (fullSource, i) = s
+    if (fullSource.isDefinedAt(i)) {
+      fullSource(i) match {
+        case whitespace(_) => skipWS(s.next)
         case _             => s
       }
     } else {
@@ -247,20 +268,20 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   }
 
   private def skipStr(implicit path: Vector[PPath]): Pipe = { s =>
-    parseString(path)(s).map(_._2)
+    (parseString(path)(s): F[(String, Input)]).map(_._2)
   }
   private def skipBool(implicit path: Vector[PPath]): Pipe =
-    s => parseBoolean(path)(s).map(_._2)
+    s => (parseBoolean(path)(s): F[(Boolean, Input)]).map(_._2)
 
   private def skipComma(implicit path: Vector[PPath]): Pipe = { s =>
     getChar(s).flatMap {
-      case ',' => (s + 1).pure[F]
+      case ',' => s.next.pure[F]
       case u   => ME.raiseError(ParseFailure(",", u.toString, path))
     }
   }
   private def skipNum(expectedTerminator: ExpectedTerminator)(
       implicit path: Vector[PPath]): Pipe = { s =>
-    parseNumber(expectedTerminator)(path)(s).map(_._2)
+    (parseNumber(expectedTerminator)(path)(s): F[(Double, Input)]).map(_._2)
   }
 
   // Does not skip intermediate terminator, eg. `,`
@@ -280,7 +301,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   }
 
   private def skipArr(implicit path: Vector[PPath]): Pipe = { stream =>
-    val next = stream + 1
+    val next = stream.next
     getChar(stream).flatMap {
       // expect arr to starts with [
       case '[' =>
@@ -297,29 +318,29 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
       skippedSep <- skipOne(OneOf(Bracket, Comma))(path)(s)
       skippedWs  = skipWS(skippedSep)
       result <- getChar(skippedWs).flatMap {
-                 case ']'   => (skippedWs + 1).pure[F]
-                 case ','   => takeTilArrayEnd(path)(skippedWs + 1)
+                 case ']'   => skippedWs.next.pure[F]
+                 case ','   => takeTilArrayEnd(path)(skippedWs.next)
                  case unexp => ME.raiseError[CharSource](ParseFailure(",", unexp.toString, path))
                }
     } yield result
 
   }
 
-  private def parseObjKey(stream: CharSource)(
+  private def parseObjKey(input: CharSource)(
       implicit path: Vector[PPath]): F[(String, CharSource)] = {
-    val skipped = skipWS(stream)
+    val skipped = skipWS(input)
 
     getChar(skipped).flatMap {
       case '"' =>
-        val keyStr = accJsString(skipped + 1)
+        val keyStr = accJsString(skipped.next)
 
         keyStr.flatMap {
           case (key, afterKey) =>
-            val skipAfterKey = skipWS(afterKey)
+            val skipAfterKey = skipWS(input._1 -> afterKey)
             getChar(skipAfterKey).flatMap {
-              case ':' => (key, skipAfterKey + 1).pure[F]
+              case ':' => (key, skipAfterKey.next).pure[F]
               case o =>
-                ME.raiseError[(String, Int)](
+                ME.raiseError[(String, CharSource)](
                   ParseFailure(s": for key ${key.mkString} finding", o.toString, path))
             }
         }
@@ -336,8 +357,8 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
           skippedOne <- skipOne(OneOf(Comma, CurlyBrace))(path)(next)
           skippedWS  = skipWS(skippedOne)
           result <- getChar(skippedWS).flatMap {
-                     case ',' => skipKVPairs(path)(skippedWS)
-                     case '}' => (skippedWS + 1).pure[F]
+                     case ',' => skipKVPairs(path)(skippedWS.next)
+                     case '}' => skippedWS.pure[F]
                      case uexp =>
                        ME.raiseError[CharSource](ParseFailure(", or }", uexp.toString, path))
                    }
@@ -350,9 +371,9 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     getChar(s).flatMap {
       case '{' =>
         for {
-          skipKVs <- skipKVPairs(path)(s + 1)
+          skipKVs <- skipKVPairs(path)(s.next)
           result <- getChar(skipKVs).flatMap {
-                     case '}'  => (skipKVs + 1).pure[F]
+                     case '}'  => skipKVs.next.pure[F]
                      case uexp => ME.raiseError[CharSource](ParseFailure("}", uexp.toString, path))
                    }
         } yield {
@@ -365,7 +386,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   private def parseSign(s: CharSource)(
       implicit path: Vector[PPath]): F[(Option[Char], CharSource)] = {
     getChar(s).map {
-      case sign(sChar) => Some(sChar) -> (s + 1)
+      case sign(sChar) => Some(sChar) -> s.next
       case _           => None        -> s
     }
   }
@@ -394,7 +415,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   private def parseNum1(s: CharSource)(term: ExpectedTerminator)(
       implicit p: Vector[PPath]): F[Part1] = {
     def recurse(acc: Vector[Char], s: CharSource): F[Part1] = {
-      val next = s + 1
+      val next = s.next
       getCharOpt(s).flatFold {
         case digit(d)               => recurse(acc :+ d, next)
         case t if term.matchChar(t) => ME.pure(Part1(acc, None, s))
@@ -421,7 +442,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   private def parseNum2(s: CharSource, p1Sep: Char)(term: ExpectedTerminator)(
       implicit p: Vector[PPath]): F[Part2] = {
     def recurse(acc: Vector[Char], s: CharSource): F[Part2] = {
-      val next = s + 1
+      val next = s.next
       getCharOpt(s).flatFold {
         case digit(d)                    => recurse(acc :+ d, next)
         case t if term.matchChar(t)      => ME.pure(Part2(acc, None, s))
@@ -444,7 +465,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   private def parseNum3(s: CharSource)(term: ExpectedTerminator)(
       implicit path: Vector[PPath]): F[(Vector[Char], CharSource)] = {
     def recurse(acc: Vector[Char], s: CharSource): F[(Vector[Char], CharSource)] = {
-      val next = s + 1
+      val next = s.next
       getCharOpt(s).flatFold {
         case digit(d)               => recurse(acc :+ d, next)
         case t if term.matchChar(t) => ME.pure(acc -> s)
@@ -472,9 +493,9 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     }
     override def ap[A, B](ff: Parse[A => B])(fa: Parse[A]): Parse[B] = { path => src =>
       for {
-        pair1           <- ff(path)(src)
+        pair1           <- ff(path)(src): F[(A => B, Input)]
         (fn, _)         = pair1
-        pair2           <- fa(path)(src)
+        pair2           <- fa(path)(src): F[(A, Input)]
         (a, restSource) = pair2
       } yield {
         fn(a) -> restSource
@@ -483,7 +504,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   }
 
   def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
-    parseObj(discriminatorField, parseString)(path)(src).flatMap {
+    (parseObj(discriminatorField, parseString)(path)(src): F[(String, Input)]).flatMap {
       case (key, _) =>
         oneOf(key) match {
           case Some(parseFn) => parseFn.value(path)(src)
@@ -494,7 +515,7 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   }
 
   def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
-    parse(path)(src)
+    (parse(path)(src): F[(I, Input)])
       .map[(Option[I], CharSource)] {
         case (i, next) =>
           // WARNING: runtime flattening of None
@@ -513,4 +534,10 @@ abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
   }
 
   val parsing: ParseOps[Parse, ?] ~> Parse = parsingM
+}
+
+object JsonArrayParse {
+
+  type Input           = (Array[Char], Int)
+  type Output[F[_], A] = F[(A, Input)]
 }

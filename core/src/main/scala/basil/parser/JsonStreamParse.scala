@@ -268,13 +268,13 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
     }
   }
 
-  private def skipKVPair(implicit path: Vector[PPath]): Pipe = { s =>
+  private def skipKVPairs(implicit path: Vector[PPath]): Pipe = { s =>
     parseObjKey(s).flatMap {
       case (_, next) =>
         val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(next)
 
         skipWS(skippedOne).peek1.flatMap {
-          case (',', next) => skipKVPair(path)(next.drop1)
+          case (',', next) => skipKVPairs(path)(next.drop1)
           case ('}', next) => next
           case (uexp, _) =>
             ME.raiseError(ParseFailure(", or }", uexp.toString, path))
@@ -285,7 +285,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
   private def skipObject(implicit path: Vector[PPath]): Pipe = { s =>
     s.take1.flatMap {
       case ('{', next) =>
-        skipKVPair(path)(next).take1.flatMap[Char] {
+        skipKVPairs(path)(next).take1.flatMap[Char] {
           case ('}', next) => next
           case (uexp, _) =>
             ME.raiseError(ParseFailure("}", uexp.toString, path))

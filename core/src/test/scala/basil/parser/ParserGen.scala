@@ -18,12 +18,12 @@ trait ParserGen {
     } yield (ops, jValue, extracted)
   }
 
-  def jsArrGen[A](n: Int, gen: ObjExpectedGen[A]): ObjExpectedGen[A] = {
+  def jsArrGen[A](size: Int, gen: ObjExpectedGen[A]): ObjExpectedGen[A] = {
     for {
-      list               <- Gen.listOfN(n + 1, randomJsGen)
+      list               <- Gen.listOfN(size + 1, randomJsGen)
       (target, finalVal) <- gen
     } yield {
-      val (a, b) = list.splitAt(n)
+      val (a, b) = list.splitAt(size)
       JArray(a ::: (target :: b)) -> finalVal
     }
   }
