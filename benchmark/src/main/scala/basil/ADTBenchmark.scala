@@ -6,7 +6,8 @@ import basil.derive.DeriveParseOps
 import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
-import io.circe.generic.auto._
+import io.circe.generic.extras.auto._
+import io.circe.generic.extras.Configuration
 import io.circe.parser._
 import org.openjdk.jmh.annotations._
 
@@ -19,7 +20,9 @@ case class Z(l: ADTBase, r: ADTBase) extends ADTBase
 @BenchmarkMode(Array(Mode.Throughput))
 @State(Scope.Thread)
 class ADTBenchmark {
-  val obj: ADTBase        = Z(X(1), Y("VVV"))
+  implicit val genDevConfig: Configuration =
+    Configuration.default.withDiscriminator("type")
+
   val jsonString1: String = """{"type":"Z","l":{"type":"X","a":1},"r":{"type":"Y","b":"VVV"}}"""
 
   import DeriveParseOps._
@@ -30,6 +33,8 @@ class ADTBenchmark {
   }
 
   @Benchmark
-  def readCirce(): ADTBase = decode[ADTBase](jsonString1).fold(throw _, x => x)
+  def readCirce(): ADTBase = {
+    decode[ADTBase](jsonString1).fold(e => throw e, x => x)
+  }
 
 }

@@ -59,9 +59,9 @@ lazy val benchmark = project
       "com.lihaoyi"         %% "upickle"              % "0.7.1",
       "com.dslplatform"     %% "dsl-json-scala"       % "1.8.4",
       "com.jsoniter"        % "jsoniter"              % "0.9.23",
-      "io.circe"            %% "circe-generic"        % "0.10.1",
-      "io.circe"            %% "circe-generic-extras" % "0.10.1",
-      "io.circe"            %% "circe-parser"         % "0.10.1",
+      "io.circe"            %% "circe-generic"        % "0.11.1",
+      "io.circe"            %% "circe-generic-extras" % "0.11.1",
+      "io.circe"            %% "circe-parser"         % "0.11.1",
       "com.typesafe.play"   %% "play-json"            % "2.7.0-RC2"
     ) ++ testDeps
   )
