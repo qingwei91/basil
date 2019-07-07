@@ -54,8 +54,8 @@ lazy val benchmark = project
   .enablePlugins(JmhPlugin)
   .settings(
     libraryDependencies ++= Seq(
-      "io.github.qingwei91" %% "basil-core"           % "0.0.4",
-      "io.github.qingwei91" %% "basil-derive"         % "0.0.4",
+      "io.github.qingwei91" %% "basil-core"           % "0.0.6",
+      "io.github.qingwei91" %% "basil-derive"         % "0.0.6",
       "com.lihaoyi"         %% "upickle"              % "0.7.1",
       "com.dslplatform"     %% "dsl-json-scala"       % "1.8.4",
       "com.jsoniter"        % "jsoniter"              % "0.9.23",
@@ -118,6 +118,7 @@ lazy val commons = Def.settings(
     "-Ywarn-value-discard", // Warn when non-Unit expression results are unused.
     "-Yrangepos"
   ),
+  // needed as basil is published on releases repository
   resolvers += Resolver.sonatypeRepo("releases"),
   addCompilerPlugin("org.spire-math"  %% "kind-projector" % "0.9.7"),
   addCompilerPlugin("org.scalamacros" % "paradise"        % "2.1.0" cross CrossVersion.full)

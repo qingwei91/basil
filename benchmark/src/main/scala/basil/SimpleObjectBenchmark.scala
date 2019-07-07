@@ -12,37 +12,41 @@ import io.circe.generic.extras.Configuration
 import io.circe.parser._
 import org.openjdk.jmh.annotations._
 
-sealed trait ADTBase                 extends Product with Serializable
-case class X(a: Double)              extends ADTBase
-case class Y(b: String)              extends ADTBase
-case class Z(l: ADTBase, r: ADTBase) extends ADTBase
+case class Simple(a: Double, b: String, c: Boolean)
 
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 @BenchmarkMode(Array(Mode.Throughput))
 @State(Scope.Thread)
-class ADTBenchmark {
+class SimpleObjectBenchmark {
   implicit val genDevConfig: Configuration =
     Configuration.default.withDiscriminator("type")
 
-  val jsonString1: String = """{"type":"Z","l":{"type":"X","a":1},"r":{"type":"Y","b":"VVV"}}"""
+  val jsonString1: String =
+    """{
+      | "a": 200,
+      | "b": "hello world!!!!!",
+      | "c": false
+      |}""".stripMargin
 
-  type In = (Array[Char], Int)
+
+
+  type In   = (Array[Char], Int)
   type F[A] = Either[ParseFailure, (A, In)]
 
   import DeriveParseOps._
 
   @Benchmark
-  def basilRead(): ADTBase = {
+  def basilRead(): Simple = {
     Parser
-      .parseG[In, F, ADTBase](Start.getType[ADTBase].eval, jsonString1.toCharArray -> 0)
+      .parseG[In, F, Simple](Start.getType[Simple].eval, jsonString1.toCharArray -> 0)
       .right
       .get
       ._1
   }
 
   @Benchmark
-  def readCirce(): ADTBase = {
-    decode[ADTBase](jsonString1).fold(e => throw e, x => x)
+  def readCirce(): Simple = {
+    decode[Simple](jsonString1).fold(e => throw e, x => x)
   }
 
 }
