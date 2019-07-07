@@ -1,14 +1,14 @@
 package basil.instances
 
 import basil.data.ParseFailure
-import basil.parser.JsonParse
+import basil.parser.JsonStreamParse
 import basil.typeclass.{Cons, TakeOne}
 import cats.{Monad, MonadError}
 import cats.effect.IO
 import fs2.{Pull, Stream}
 
 object fs2Instances {
-  implicit object StreamJsonParser extends JsonParse[Stream[IO, ?]]
+  implicit object StreamJsonParser extends JsonStreamParse[Stream[IO, ?]]
 
   implicit def streamTakeOne: TakeOne[Stream[IO, ?]] =
     new TakeOne[Stream[IO, ?]] {

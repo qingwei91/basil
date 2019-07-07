@@ -10,26 +10,23 @@ import cats.{Applicative, MonadError, ~>}
 import scala.util.Try
 
 /**
-  * Core abstraction of the library
-  * Contains logic to extract data from json
+  * TODO: model Input as `(Array[Char], Int)`
+  * this will avoid having to inject `Array[Char]` when using this
   *
-  * The main selling point is that it works on 1 character at a time
-  * and thus can work on partial json and stream of json
-  *
-  * By trying to extract the exact data needed, it avoids creating
-  * intermediate data structure
+  * We only need 3 abilities from the input
+  * a) get by index
+  * b) slice
+  * c) isDefinedAtIndex
   */
-abstract class JsonParse2[F[_]](fullSource: Array[Char])(
+abstract class JsonArrayParse[F[_]](fullSource: Array[Char])(
     implicit
     ME: MonadError[F, ParseFailure],
-) {
+) extends JsonParse[Int, Lambda[A => F[(A, Int)]]] {
 
   val discriminatorField: String = "type"
 
   // latest index
   type CharSource = Int
-
-  type Parse[I] = Vector[PPath] => CharSource => F[(I, Int)]
 
   type Pipe = CharSource => F[CharSource]
 

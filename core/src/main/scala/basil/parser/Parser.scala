@@ -7,6 +7,7 @@ import basil.typeclass.EffStack
 import scala.util.{Failure, Success, Try}
 
 object Parser {
+  val initPath = Vector.empty[PPath]
 
   /**
     * The canonical entry point of this library, to extract certain
@@ -15,17 +16,21 @@ object Parser {
     * @param expr The parse operations tree that describe data
     *             user wanted
     * @param src Data source
-    * @tparam JV User supplied Json AST type
     * @return
     */
   def parseSource[Source[_], I](expr: HFix[ParseOps, I], src: Source[Char])(
-      implicit parse: JsonParse[Source]): Source[(I, parse.CharSource)] = {
-    HFix.cata[ParseOps, I, parse.Parse](expr, parse.parsing).apply(initPath)(src)
+      implicit parse: JsonStreamParse[Source]): Source[(I, parse.CharSource)] = {
+    parseG[Source[Char], Lambda[A => Source[(A, Source[Char])]], I](expr, src)
+  }
+
+  def parseG[Input, F[_], TargetType](expr: HFix[ParseOps, TargetType], src: Input)(
+      implicit parse: JsonParse[Input, F]): F[TargetType] = {
+    HFix.cata[ParseOps, TargetType, parse.Parse](expr, parse.parsing).apply(initPath)(src)
   }
 
   // this method might be ineffcient, benchmark needed
   def parseString[I](expr: HFix[ParseOps, I], src: String)(
-      implicit parse: JsonParse[EffStack[Try, List, ?]]): Try[I] = {
+      implicit parse: JsonStreamParse[EffStack[Try, List, ?]]): Try[I] = {
     HFix
       .cata[ParseOps, I, parse.Parse](expr, parse.parsing)
       .apply(initPath)(Success(src.toList))
@@ -37,8 +42,6 @@ object Parser {
           )
       }
   }
-
-  val initPath = Vector.empty[PPath]
 }
 
 object digit {

@@ -1,14 +1,18 @@
 package basil.parser
 
+import basil.parser.ListParserSpec._
 import basil.typeclass.instances._
-import cats.instances.list._
 
 import scala.util.Success
-
-class ListParserSpec extends ParseSpec[TryF[List, ?]] {
-  override implicit val parser: JsonParse[TryF[List, ?]] = implicits.ListJsonParser
+class ListParserSpec extends ParseSpec[Input, Output] {
+  override implicit val parser: JsonStreamParse[TryF[List, ?]] = implicits.ListJsonParser
 
   override def liftF(charArr: Array[Char]): TryF[List, Char] = Success(List(charArr: _*))
 
-  override def getLast[A](f: TryF[List, A]): A = f.get.last
+  override def getLast[A](f: Output[A]): A = f.get.last._1
+}
+
+object ListParserSpec {
+  type Input     = TryF[List, Char]
+  type Output[A] = TryF[List, (A, Input)]
 }

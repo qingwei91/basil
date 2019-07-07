@@ -9,6 +9,6 @@ import scala.util.Try
 
 object implicits {
 
-  implicit object ListJsonParser extends JsonParse[EffStack[Try, List, ?]]
+  implicit object ListJsonParser extends JsonStreamParse[EffStack[Try, List, ?]]
 
 }
