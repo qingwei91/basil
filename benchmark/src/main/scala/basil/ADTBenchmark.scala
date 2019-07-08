@@ -7,10 +7,12 @@ import basil.derive.DeriveParseOps
 import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
-import io.circe.generic.extras.auto._
 import io.circe.generic.extras.Configuration
+import io.circe.generic.extras.auto._
 import io.circe.parser._
 import org.openjdk.jmh.annotations._
+
+import scala.util.Try
 
 sealed trait ADTBase                 extends Product with Serializable
 case class X(a: Double)              extends ADTBase
@@ -26,7 +28,7 @@ class ADTBenchmark {
 
   val jsonString1: String = """{"type":"Z","l":{"type":"X","a":1},"r":{"type":"Y","b":"VVV"}}"""
 
-  type In = (Array[Char], Int)
+  type In   = (Array[Char], Int)
   type F[A] = Either[ParseFailure, (A, In)]
 
   import DeriveParseOps._
@@ -37,6 +39,16 @@ class ADTBenchmark {
       .parseG[In, F, ADTBase](Start.getType[ADTBase].eval, jsonString1.toCharArray -> 0)
       .right
       .get
+      ._1
+  }
+
+  @Benchmark
+  def basilStream(): ADTBase = {
+    Parser
+      .parseSource[Lambda[A => Try[List[A]]], ADTBase](Start.getType[ADTBase].eval,
+                                                       Try(jsonString1.toCharArray.toList))
+      .get
+      .head
       ._1
   }
 
