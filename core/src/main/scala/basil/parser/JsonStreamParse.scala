@@ -302,10 +302,10 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
   }
 
   implicit class SourceOps[A](s: Source[(Option[A], CharSource)]) {
-    def flatFold[B](f: (A, CharSource) => Source[B])(orElse: Source[B]): Source[B] = {
+    def flatFold[B](f: (A, CharSource) => Source[B])(orElse: () => Source[B]): Source[B] = {
       s.flatMap {
         case (Some(a), next) => f(a, next)
-        case (None, _)       => orElse
+        case (None, _)       => orElse()
       }
     }
   }
@@ -336,7 +336,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
           consumeTillTermination(next)(term, n => ME.pure(Part1(acc, None, n)))
         case (u, _) =>
           ME.raiseError[Part1](ParseFailure(s"Digit or $term", u.toString, p))
-      } {
+      } { () =>
         if (term == End && acc.nonEmpty) {
           ME.pure(Part1(acc, None, Monoid.empty))
         } else {
@@ -361,7 +361,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
           consumeTillTermination(next)(term, n => ME.pure(Part2(acc, None, n)))
         case (u, _) =>
           ME.raiseError[Part2](ParseFailure(s"Digit or $term", u.toString, p))
-      } {
+      } { () =>
         if (term == End && acc.nonEmpty) {
           ME.pure(Part2(acc, None, Monoid.empty))
         } else {
@@ -383,7 +383,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case (u, _) =>
           ME.raiseError[(Vector[Char], CharSource)](
             ParseFailure(s"Digit or $term", u.toString, path))
-      } {
+      } { () =>
         if (term == End && acc.nonEmpty) {
           ME.pure(acc -> s)
         } else {

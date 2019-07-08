@@ -48,14 +48,15 @@ lazy val derive = project
     ) ++ testDeps
   )
 
+val benchmarkV = "0.0.6+2-2758e34d+20190708-0701-SNAPSHOT"
 lazy val benchmark = project
   .in(file("benchmark"))
   .settings(commons)
   .enablePlugins(JmhPlugin)
   .settings(
     libraryDependencies ++= Seq(
-      "io.github.qingwei91" %% "basil-core"           % "0.0.6",
-      "io.github.qingwei91" %% "basil-derive"         % "0.0.6",
+      "io.github.qingwei91" %% "basil-core"           % benchmarkV,
+      "io.github.qingwei91" %% "basil-derive"         % benchmarkV,
       "com.lihaoyi"         %% "upickle"              % "0.7.1",
       "com.dslplatform"     %% "dsl-json-scala"       % "1.8.4",
       "com.jsoniter"        % "jsoniter"              % "0.9.23",

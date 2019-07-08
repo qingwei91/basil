@@ -125,16 +125,13 @@ abstract class JsonArrayParse[F[_]](
               parseNum3(next)(terminator).flatMap {
                 case (p3, next) =>
                   val full = (p1 :+ sep1) ++ (p2 :+ sep2) ++ p3
-                  ME.pure(full -> next)
+                  ME.pure(full.mkString.toDouble -> next)
               }
             case Part2(p2, None, next) =>
               val full = (p1 :+ sep1) ++ p2
-              ME.pure(full -> next)
+              ME.pure(full.mkString.toDouble -> next)
           }
-        case Part1(p1, None, next) => ME.pure(p1 -> next)
-      }
-      .map {
-        case (numChars, next) => numChars.mkString.toDouble -> next
+        case Part1(p1, None, next) => ME.pure(p1.mkString.toDouble -> next)
       }
   }
 
@@ -392,10 +389,10 @@ abstract class JsonArrayParse[F[_]](
   }
 
   implicit class SourceOps[A](s: F[Option[A]]) {
-    def flatFold[B](f: A => F[B])(orElse: F[B]): F[B] = {
+    def flatFold[B](f: A => F[B])(orElse: () => F[B]): F[B] = {
       s.flatMap {
         case Some(a) => f(a)
-        case None    => orElse
+        case None    => orElse()
       }
     }
   }
@@ -426,7 +423,7 @@ abstract class JsonArrayParse[F[_]](
           consumeTillTermination(next)(term, n => ME.pure(Part1(acc, None, n)))
         case u =>
           ME.raiseError[Part1](ParseFailure(s"Digit or $term", u.toString, p))
-      } {
+      } { () =>
         if (term == End && acc.nonEmpty) {
           ME.pure(Part1(acc, None, s))
         } else {
@@ -451,7 +448,7 @@ abstract class JsonArrayParse[F[_]](
           consumeTillTermination(next)(term, n => ME.pure(Part2(acc, None, n)))
         case u =>
           ME.raiseError[Part2](ParseFailure(s"Digit or $term", u.toString, p))
-      } {
+      } { () =>
         if (term == End && acc.nonEmpty) {
           ME.pure(Part2(acc, None, s))
         } else {
@@ -474,7 +471,7 @@ abstract class JsonArrayParse[F[_]](
         case u =>
           ME.raiseError[(Vector[Char], CharSource)](
             ParseFailure(s"Digit or $term", u.toString, path))
-      } {
+      } { () =>
         if (term == End && acc.nonEmpty) {
           ME.pure(acc -> s)
         } else {
