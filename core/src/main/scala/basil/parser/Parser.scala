@@ -45,7 +45,8 @@ object Parser {
 }
 
 object digit {
-  private val digits = (0 to 9).map(x => Character.forDigit(x, 10))
+  private val digits: Set[Char] = (0 to 9).map(x => Character.forDigit(x, 10)).toSet
+
   def unapply(arg: Char): Option[Char] = {
     Some(arg).filter(digits.contains)
   }
@@ -64,7 +65,10 @@ object exponent {
   def unapply(c: Char): Option[Char] = if (c == 'e' || c == 'E') { Some(c) } else None
 }
 object whitespace {
-  private val ws = List(' ', '\n', '\t', '\r')
+  private val ws: Set[Char] = Set(' ', '\n', '\t', '\r')
 
-  def unapply(arg: Char): Option[Char] = Some(arg).filter(ws.contains)
+  def unapply(arg: Char): Option[Char] = {
+
+    Some(arg).filter(ws.contains)
+  }
 }

@@ -109,7 +109,11 @@ abstract class JsonArrayParse[F[_]](
           case Part2(p2, Some(sep2), next) =>
             parseNum3(next)(terminator) match {
               case (p3, next) =>
-                val full = (p1 :+ sep1) ++ (p2 :+ sep2) ++ p3
+                val full = p1
+                  .append(sep1)
+                  .append(p2.append(sep2))
+                  .append(p3)
+
                 full.mkString.toDouble -> next
             }
           case Part2(p2, None, next) =>
@@ -171,18 +175,6 @@ abstract class JsonArrayParse[F[_]](
   }
 
   // todo: handle unicode ??? (maybe just dont support it)
-  /**
-    * Method to accumulate json string
-    * Expect input to NOT starts with double quote, expects String to end with
-    * double quote
-    *
-    * Returns a Source of Vector[Char] and Source[Char]
-    *   Vector[Char] represents the js string without double quotes, can be empty
-    *   Source[Char] represent subsequent stream of char after consuming string
-    *
-    * eg. Input = I am pretty", next...
-    *     Output = (I am pretty -> Source(, next...))
-    */
   private def accJsString(input: Input)(implicit path: Vector[PPath]): (String, Int) = {
 
     // lastCharIsSpecial - we need to know if last
@@ -192,8 +184,9 @@ abstract class JsonArrayParse[F[_]](
     // we should not treat the next char as part of
     // escape sequence
 
-    // TODO: consider optimize acc to use a string builder?
-    def recurse(curPointer: Int, acc: Vector[Char], lastCharIsSpecial: Boolean): (String, Int) = {
+    // TODO: consider optimize acc to just be a pair of pointers
+    // then we can avoid allocation
+    def recurse(curPointer: Int, acc: StringBuilder, lastCharIsSpecial: Boolean): (String, Int) = {
 
       val wasEscaped = !lastCharIsSpecial && acc.lastOption.contains('\\')
 
@@ -201,29 +194,32 @@ abstract class JsonArrayParse[F[_]](
 
       getChar((input._1, curPointer)) match {
         case '"' if wasEscaped =>
-          recurse(next, acc.dropRight(1) :+ '"', true)
+          val updated = acc.deleteCharAt(acc.size - 1).append('"')
+          recurse(next, updated, true)
         case '/' if wasEscaped =>
-          recurse(next, acc.dropRight(1) :+ '/', true)
+          val updated = acc.deleteCharAt(acc.size - 1).append('/')
+          recurse(next, updated, true)
         case 'b' if wasEscaped =>
-          recurse(next, acc :+ 'b', true)
+          recurse(next, acc.append('b'), true)
         case 'f' if wasEscaped =>
-          recurse(next, acc :+ 'f', true)
+          recurse(next, acc.append('f'), true)
         case 'n' if wasEscaped =>
-          recurse(next, acc :+ 'n', true)
+          recurse(next, acc.append('n'), true)
         case 'r' if wasEscaped =>
-          recurse(next, acc :+ 'r', true)
+          recurse(next, acc.append('r'), true)
         case 't' if wasEscaped =>
-          recurse(next, acc :+ 't', true)
+          recurse(next, acc.append('t'), true)
         case '\\' if wasEscaped =>
-          recurse(next, acc.dropRight(1) :+ '\\', true)
+          val updated = acc.deleteCharAt(acc.size - 1).append('\\')
+          recurse(next, updated, true)
         case oops if wasEscaped =>
           throw ParseFailure(s"Illegal escape sequence \\$oops", path)
         case '"' => (acc.mkString, next)
-        case c   => recurse(next, acc :+ c, false)
+        case c   => recurse(next, acc.append(c), false)
       }
     }
 
-    recurse(input._2, Vector.empty[Char], lastCharIsSpecial = false)
+    recurse(input._2, StringBuilder.newBuilder, lastCharIsSpecial = false)
   }
 
   private def skipWS(s: Input): Input = {
@@ -360,8 +356,8 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private case class Part1(part1: Vector[Char], sep: Option[Char], cont: Input)
-  private case class Part2(part2: Vector[Char], sep: Option[Char], cont: Input)
+  private case class Part1(part1: StringBuilder, sep: Option[Char], cont: Input)
+  private case class Part2(part2: StringBuilder, sep: Option[Char], cont: Input)
 
   private def consumeTillTermination[A](s: Input)(term: ExpectedTerminator, f: Input => A)(
       implicit p: Vector[PPath]): A = {
@@ -373,13 +369,13 @@ abstract class JsonArrayParse[F[_]](
 
   private def parseNum1(s: Input)(term: ExpectedTerminator)(implicit p: Vector[PPath]): Part1 = {
 
-    def recurse(acc: Vector[Char], s: Input): Part1 = {
+    def recurse(acc: StringBuilder, s: Input): Part1 = {
       val next = s.next
 
       getCharOpt(s) match {
         case Some(c) =>
           c match {
-            case digit(d)               => recurse(acc :+ d, next)
+            case digit(d)               => recurse(acc.append(d), next)
             case t if term.matchChar(t) => Part1(acc, None, s)
             case '.'                    => Part1(acc, Some('.'), next)
             case 'E'                    => Part1(acc, Some('e'), next)
@@ -399,17 +395,19 @@ abstract class JsonArrayParse[F[_]](
     }
 
     val (maybe, next) = parseSign(s)
-    recurse(maybe.toVector, next)
+    val stringBuilder = new StringBuilder
+    maybe.foreach(stringBuilder.append)
+    recurse(stringBuilder, next)
   }
 
   private def parseNum2(s: Input, p1Sep: Char)(term: ExpectedTerminator)(
       implicit p: Vector[PPath]): Part2 = {
-    def recurse(acc: Vector[Char], s: Input): Part2 = {
+    def recurse(acc: StringBuilder, s: Input): Part2 = {
       val next = s.next
       getCharOpt(s) match {
         case Some(c) =>
           c match {
-            case digit(d)                    => recurse(acc :+ d, next)
+            case digit(d)                    => recurse(acc.append(d), next)
             case t if term.matchChar(t)      => Part2(acc, None, s)
             case exponent(e) if p1Sep == '.' => Part2(acc, Some(e), next)
             case whitespace(_) =>
@@ -425,17 +423,18 @@ abstract class JsonArrayParse[F[_]](
           }
       }
     }
-    recurse(Vector.empty, s)
+
+    recurse(StringBuilder.newBuilder, s)
   }
 
   private def parseNum3(s: Input)(term: ExpectedTerminator)(
-      implicit path: Vector[PPath]): (Vector[Char], Input) = {
-    def recurse(acc: Vector[Char], s: Input): (Vector[Char], Input) = {
+      implicit path: Vector[PPath]): (StringBuilder, Input) = {
+    def recurse(acc: StringBuilder, s: Input): (StringBuilder, Input) = {
       val next = s.next
       getCharOpt(s) match {
         case Some(c) =>
           c match {
-            case digit(d)               => recurse(acc :+ d, next)
+            case digit(d)               => recurse(acc.append(d), next)
             case t if term.matchChar(t) => acc -> s
             case whitespace(_) =>
               consumeTillTermination(next)(term, n => acc -> n)
@@ -450,8 +449,11 @@ abstract class JsonArrayParse[F[_]](
           }
       }
     }
+
     val (maybe, next) = parseSign(s)
-    recurse(maybe.toVector, next)
+    val stringBuilder = new StringBuilder
+    maybe.foreach(stringBuilder.append)
+    recurse(stringBuilder, next)
   }
 
   implicit val ParseApp: Applicative[Parse] = new Applicative[Parse] {
