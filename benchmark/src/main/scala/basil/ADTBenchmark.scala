@@ -29,7 +29,7 @@ class ADTBenchmark {
   val jsonString1: String = """{"type":"Z","l":{"type":"X","a":1},"r":{"type":"Y","b":"VVV"}}"""
 
   type In   = (Array[Char], Int)
-  type F[A] = Either[ParseFailure, (A, In)]
+  type F[A] = Either[ParseFailure, A]
 
   import DeriveParseOps._
 
@@ -39,7 +39,6 @@ class ADTBenchmark {
       .parseG[In, F, ADTBase](Start.getType[ADTBase].eval, jsonString1.toCharArray -> 0)
       .right
       .get
-      ._1
   }
 
   @Benchmark

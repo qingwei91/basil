@@ -11,11 +11,11 @@ package basil.data
   *     depending on the subsequent characters
   */
 sealed trait ExpectedTerminator
-case object Comma                             extends ExpectedTerminator
-case object Bracket                           extends ExpectedTerminator
-case object CurlyBrace                        extends ExpectedTerminator
-case object End                               extends ExpectedTerminator
-case class OneOf(t: List[ExpectedTerminator]) extends ExpectedTerminator
+case object Comma                                      extends ExpectedTerminator
+case object Bracket                                    extends ExpectedTerminator
+case object CurlyBrace                                 extends ExpectedTerminator
+case object End                                        extends ExpectedTerminator
+case class OneOf private (t: List[ExpectedTerminator]) extends ExpectedTerminator
 
 object ExpectedTerminator {
   implicit class Ops(terminator: ExpectedTerminator) {
@@ -28,9 +28,19 @@ object ExpectedTerminator {
         case End        => false
       }
     }
-  }
-}
+    def isEnd: Boolean = {
+      terminator match {
+        case End      => true
+        case OneOf(t) => t.contains(End)
+        case _        => false
+      }
+    }
 
-object OneOf {
-  def apply(t: ExpectedTerminator*): OneOf = OneOf(List(t: _*))
+  }
+  private def oneOf(t: ExpectedTerminator*): OneOf = OneOf(List(t: _*))
+
+  val arrayTerm    = oneOf(Bracket, Comma)
+  val objTerm      = oneOf(Comma, CurlyBrace)
+  val allExceptEnd = oneOf(Comma, CurlyBrace, Bracket)
+  val all          = oneOf(Comma, CurlyBrace, Bracket, End)
 }

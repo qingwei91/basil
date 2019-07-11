@@ -11,11 +11,11 @@ class ArrayParserSpec extends ParseSpec[Input, Output] {
 
   override def getLast[A](f: Output[A]): A = f.fold[A](
     failure => throw failure,
-    result => result._1
+    result => result
   )
 }
 
 object ArrayParserSpec {
   type Input     = (Array[Char], Int)
-  type Output[A] = Either[ParseFailure, (A, Input)]
+  type Output[A] = Either[ParseFailure, A]
 }

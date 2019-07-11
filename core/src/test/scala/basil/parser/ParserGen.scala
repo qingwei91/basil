@@ -1,4 +1,6 @@
-package basil.parser
+package basil
+package parser
+
 import basil.data._
 import basil.typeclass.Lazy
 import cats.arrow.FunctionK
@@ -9,9 +11,8 @@ import org.json4s.{JArray, JBool, JDouble, JNull, JObject, JString, JValue}
 import org.scalacheck.Gen
 
 trait ParserGen {
-  type OpTree[I] = HFix[ParseOps, I]
 
-  def opsJsGen(depth: Int): Gen[(OpTree[_], JValue, Any)] = {
+  def opsJsGen(depth: Int): Gen[(ParseTree[_], JValue, Any)] = {
     for {
       ops                 <- opsGen(depth)
       (jValue, extracted) <- genJs(ops)
@@ -61,29 +62,29 @@ trait ParserGen {
     }
   }
 
-  private def endingOpGen: Gen[ExpectedTerminator => OpTree[_]] = {
-    val s: ExpectedTerminator => OpTree[String]  = _ => HFix[ParseOps, String](GetString)
-    val n: ExpectedTerminator => OpTree[Double]  = x => HFix[ParseOps, Double](GetNum(x))
-    val b: ExpectedTerminator => OpTree[Boolean] = _ => HFix[ParseOps, Boolean](GetBool)
+  private def endingOpGen: Gen[ExpectedTerminator => ParseTree[_]] = {
+    val s: ExpectedTerminator => ParseTree[String]  = _ => HFix[ParseOps, String](GetString)
+    val n: ExpectedTerminator => ParseTree[Double]  = x => HFix[ParseOps, Double](GetNum(x))
+    val b: ExpectedTerminator => ParseTree[Boolean] = _ => HFix[ParseOps, Boolean](GetBool)
 
     Gen.oneOf(s, n, b)
   }
 
-  private def nonEndingOpGen[_](
-      gen: Gen[ExpectedTerminator => OpTree[_]]): Gen[ExpectedTerminator => OpTree[_]] = {
+  private def nonEndingOpGen(
+      nextGen: Gen[ExpectedTerminator => ParseTree[_]]): Gen[ExpectedTerminator => ParseTree[_]] = {
 
-    def optFallBack(nextOp: ExpectedTerminator => OpTree[_]) = {
-      val x = GetOpt[OpTree, Any](nextOp(Comma).asInstanceOf[OpTree[Any]])
-      HFix(x).asInstanceOf[OpTree[_]]
+    def optFallBack(nextOp: ExpectedTerminator => ParseTree[_]) = {
+      val x = GetOpt[ParseTree, Any](nextOp(ExpectedTerminator.all).asInstanceOf[ParseTree[Any]])
+      HFix(x).asInstanceOf[ParseTree[_]]
     }
 
     for {
-      nextOp <- gen
+      nextOp <- nextGen
       n      <- Gen.choose(0, 5)
       key    <- Gen.alphaStr.filter(_.nonEmpty)
-      op <- Gen.oneOf[OpTree[_]](
-             HFix(GetN(n, nextOp(OneOf(Bracket, Comma)))),
-             HFix(GetKey(key, nextOp(OneOf(Comma, CurlyBrace)))),
+      op <- Gen.oneOf[ParseTree[_]](
+             HFix(GetN(n, nextOp(ExpectedTerminator.arrayTerm))),
+             HFix(GetKey(key, nextOp(ExpectedTerminator.objTerm))),
              optFallBack(nextOp)
            )
     } yield { _: ExpectedTerminator =>
@@ -91,8 +92,8 @@ trait ParserGen {
     }
   }
 
-  private def opsGen(depth: Int): Gen[OpTree[_]] = {
-    def recurse(depth: Int): Gen[ExpectedTerminator => OpTree[_]] = {
+  private def opsGen(depth: Int): Gen[ParseTree[_]] = {
+    def recurse(depth: Int): Gen[ExpectedTerminator => ParseTree[_]] = {
       depth match {
         case 0 => endingOpGen
         case n => nonEndingOpGen(recurse(n - 1))

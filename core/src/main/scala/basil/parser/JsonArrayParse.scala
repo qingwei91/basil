@@ -23,15 +23,13 @@ abstract class JsonArrayParse[F[_]](
 
   private val discriminatorField: String = "type"
 
-  type Pipe = Input => Input
+  type Pipe = Int => Int
 
-  private def getChar(input: Input): Char = {
-    val (fullSource, i) = input
+  private def getChar(fullSource: Array[Char], i: Int): Char = {
     fullSource(i)
   }
 
-  private def getCharOpt(input: Input): Option[Char] = {
-    val (fullSource, i) = input
+  private def getCharOpt(fullSource: Array[Char], i: Int): Option[Char] = {
     try {
       Some(fullSource(i))
     } catch {
@@ -48,14 +46,13 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private def unsafeParseString(src: Input)(implicit path: Vector[PPath]): (String, Input) = {
-    val latestI = skipWS(src)
-    val firstC  = getChar(latestI)
+  private def unsafeParseString(src: Input)(implicit path: Vector[PPath]): (String, Int) = {
+    val (full, pointer) = src
+    val latestI         = skipWS(full, pointer)
+    val firstC          = getChar(full, latestI)
 
     firstC match {
-      case '"' =>
-        val (str, next) = accJsString(latestI.next)
-        str -> src.pointTo(next)
+      case '"' => accJsString(full, latestI + 1)
       case other =>
         throw ParseFailure(s"""String should starts with ", but found $other""", path)
     }
@@ -63,20 +60,21 @@ abstract class JsonArrayParse[F[_]](
 
   val parseString: Parse[String] = { implicit path => src =>
     wrap {
-      unsafeParseString(src)
+      unsafeParseString(src)._1
     }
   }
 
-  private def unsafeParseBool(src: Input)(implicit path: Vector[PPath]): (Boolean, Input) = {
-    val withoutWS      = skipWS(src)
-    val (isTrue, next) = withoutWS.isFollowedBy("true")
+  private def unsafeParseBool(src: Input)(implicit path: Vector[PPath]): (Boolean, Int) = {
+    val (full, ptr)    = src
+    val withoutWS      = skipWS(full, ptr)
+    val (isTrue, next) = full.isFollowedBy(withoutWS)("true")
 
     if (isTrue) {
-      true -> src.pointTo(next)
+      true -> next
     } else {
-      val (isFalse, next) = withoutWS.isFollowedBy("false")
+      val (isFalse, next) = full.isFollowedBy(withoutWS)("false")
       if (isFalse) {
-        false -> src.pointTo(next)
+        false -> next
       } else {
         throw ParseFailure("Expecting either `true` or `false`", path)
       }
@@ -85,7 +83,7 @@ abstract class JsonArrayParse[F[_]](
 
   val parseBoolean: Parse[Boolean] = { implicit path => src =>
     wrap {
-      unsafeParseBool(src)
+      unsafeParseBool(src)._1
     }
   }
 
@@ -102,80 +100,96 @@ abstract class JsonArrayParse[F[_]](
     * @return
     */
   private def unsafeParseNum(terminator: ExpectedTerminator, input: Input)(
-      implicit path: Vector[PPath]): (Double, Input) = {
-    parseNum1(skipWS(input))(terminator) match {
-      case Part1(p1, Some(sep1), next) =>
-        parseNum2(next, sep1)(terminator) match {
-          case Part2(p2, Some(sep2), next) =>
-            parseNum3(next)(terminator) match {
-              case (p3, next) =>
-                val full = p1
-                  .append(sep1)
-                  .append(p2.append(sep2))
-                  .append(p3)
+      implicit path: Vector[PPath]): (Double, Int) = {
+    val (fullSrc, i) = input
+    val start        = skipWS(fullSrc, i)
 
-                full.mkString.toDouble -> next
+    parseNum1(fullSrc, start)(terminator) match {
+      case Part1(_, Some(sep1), next) =>
+        parseNum2(fullSrc, next, sep1)(terminator) match {
+
+          case Part2(_, Some(_), next) =>
+            parseNum3(fullSrc, next)(terminator) match {
+
+              case Part3(p3, next) =>
+                val full = new String(fullSrc.slice(start, p3))
+
+                try {
+                  full.toDouble -> next
+                } catch {
+                  case e: NumberFormatException => throw e
+                }
+
             }
-          case Part2(p2, None, next) =>
-            val full = (p1 :+ sep1) ++ p2
-            full.mkString.toDouble -> next
+          case Part2(p2End, None, next) =>
+            val full = new String(fullSrc.slice(start, p2End))
+
+            full.toDouble -> next
         }
-      case Part1(p1, None, next) => p1.mkString.toDouble -> next
+      case Part1(p1End, None, next) =>
+        val p1 = new String(fullSrc.slice(start, p1End))
+        p1.toDouble -> next
     }
   }
 
   def parseNumber(terminator: ExpectedTerminator): Parse[Double] = { implicit path => s =>
     wrap {
-      unsafeParseNum(terminator, s)
+      unsafeParseNum(terminator, s)._1
     }
   }
 
-  def parseArrayItem[I](n: Int, next: Parse[I]): Parse[I] = { implicit path => s =>
-    def recurse(left: Int, path: Vector[PPath], stream: Input): Output[F, I] = {
+  def parseArrayItem[I](n: Int, next: Parse[I]): Parse[I] = { implicit path => input =>
+    val (src, ptr) = input
+
+    def recurse(left: Int, path: Vector[PPath], curr: Int): Output[F, I] = {
+
       if (left == 0) {
-        next(path)(skipWS(stream))
+        next(path)(src -> skipWS(src, curr))
       } else {
 
-        val skip1        = skipOne(Comma)(path)(stream)
-        val skippedComma = skipComma(path)(skipWS(skip1))
+        val skip1        = skipOne(src, Comma)(path)(curr)
+        val skippedWS    = skipWS(src, skip1)
+        val skippedComma = skipComma(src)(path)(skippedWS)
         recurse(left - 1, path, skippedComma)
       }
     }
 
     wrap {
-      val skipped = skipWS(s)
-      getChar(skipped) match {
-        case '[' => recurse(n, path \ n, skipped.next)
-        case u   => ME.raiseError[(I, Input)](ParseFailure("[", u.toString, path \ n))
+      val skipped = skipWS(src, ptr)
+      getChar(src, skipped) match {
+        case '[' => recurse(n, path \ n, skipped + 1)
+        case u   => ME.raiseError[I](ParseFailure("[", u.toString, path \ n))
       }
     }.flatten
   }
 
   def parseObj[I](k: String, nextOp: Parse[I]): Parse[I] = { implicit path => stream =>
-    def skipUntilKey(s: Input)(implicit path: Vector[PPath]): Input = {
-      parseObjKey(s) match {
+    val (src, ptr) = stream
+    def skipUntilKey(curr: Int)(implicit path: Vector[PPath]): Int = {
+      parseObjKey(src, curr) match {
         case (key, nextS) if key == k => nextS
         case (_, nextS) =>
-          val skippedOne = skipOne(Comma)(path)(nextS)
-          val dropComma  = skipWS(skippedOne).next
+          val skippedOne = skipOne(src, Comma)(path)(nextS)
+          val dropComma  = skipWS(src, skippedOne) + 1
           skipUntilKey(dropComma)
       }
     }
 
     wrap {
-      val skipped = skipWS(stream)
-      getChar(skipped) match {
-        case '{' => skipUntilKey(skipped.next)(path \ k)
+      val skipped = skipWS(src, ptr)
+      getChar(src, skipped) match {
+        case '{' => skipUntilKey(skipped + 1)(path \ k)
         case c   => throw ParseFailure("{", c.toString, path)
       }
     }.flatMap { afterKey =>
-      nextOp(path \ k)(afterKey)
+      nextOp(path \ k)(src -> afterKey)
     }
 
   }
 
   // todo: handle unicode ??? (maybe just dont support it)
-  private def accJsString(input: Input)(implicit path: Vector[PPath]): (String, Int) = {
+  private def accJsString(full: Array[Char], i: Int)(
+      implicit path: Vector[PPath]): (String, Int) = {
 
     // lastCharIsSpecial - we need to know if last
     // char is special or not, so that we can
@@ -184,15 +198,13 @@ abstract class JsonArrayParse[F[_]](
     // we should not treat the next char as part of
     // escape sequence
 
-    // TODO: consider optimize acc to just be a pair of pointers
-    // then we can avoid allocation
     def recurse(curPointer: Int, acc: StringBuilder, lastCharIsSpecial: Boolean): (String, Int) = {
 
       val wasEscaped = !lastCharIsSpecial && acc.lastOption.contains('\\')
 
       val next = curPointer + 1
 
-      getChar((input._1, curPointer)) match {
+      getChar(full, curPointer) match {
         case '"' if wasEscaped =>
           val updated = acc.deleteCharAt(acc.size - 1).append('"')
           recurse(next, updated, true)
@@ -219,91 +231,122 @@ abstract class JsonArrayParse[F[_]](
       }
     }
 
-    recurse(input._2, StringBuilder.newBuilder, lastCharIsSpecial = false)
+    // Avoid slow parsing logic that is only needed for string
+    // with escape char, we do so by checking if there's
+    // any escape char before we find the terminating char of string
+    // which is '"'
+    val arrSize                  = full.length
+    var firstEscape: Option[Int] = None
+    var end: Option[Int]         = None
+    var x                        = i
+    while (end.isEmpty && firstEscape.isEmpty && x < arrSize) {
+      val curr = full(x)
+      if (curr == '\\') {
+        firstEscape = Some(x)
+      } else if (curr == '"') {
+        end = Some(x)
+      }
+      x += 1
+    }
+
+    end match {
+      case Some(e) => (new String(full.slice(i, e)), e + 1)
+
+      case None if firstEscape.isEmpty =>
+        // not reach end and no escape char, invalid
+        throw ParseFailure.termination
+
+      case None =>
+        val speculateSize = (firstEscape.get - i) * 2
+        recurse(i, new StringBuilder(speculateSize), lastCharIsSpecial = false)
+    }
+
   }
 
-  private def skipWS(s: Input): Input = {
-    val (fullSource, i) = s
+  private def skipWS(fullSource: Array[Char], i: Int): Int = {
+
     if (fullSource.isDefinedAt(i)) {
       fullSource(i) match {
-        case whitespace(_) => skipWS(s.next)
-        case _             => s
+        case whitespace(_) => skipWS(fullSource, i + 1)
+        case _             => i
       }
     } else {
-      s
+      i
     }
   }
 
-  private def skipStr(implicit path: Vector[PPath]): Pipe = { s =>
-    unsafeParseString(s)._2
+  private def skipStr(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { s =>
+    unsafeParseString(src -> s)._2
   }
-  private def skipBool(implicit path: Vector[PPath]): Pipe =
-    s => unsafeParseBool(s)._2
+  private def skipBool(src: Array[Char])(implicit path: Vector[PPath]): Pipe =
+    s => unsafeParseBool(src -> s)._2
 
-  private def skipComma(implicit path: Vector[PPath]): Pipe = { s =>
-    getChar(s) match {
-      case ',' => s.next
+  private def skipComma(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { s =>
+    getChar(src, s) match {
+      case ',' => s + 1
       case u   => throw ParseFailure(",", u.toString, path)
     }
   }
-  private def skipNum(expectedTerminator: ExpectedTerminator)(
+  private def skipNum(src: Array[Char], expectedTerminator: ExpectedTerminator)(
       implicit path: Vector[PPath]): Pipe = { s =>
-    unsafeParseNum(expectedTerminator, s)._2
+    unsafeParseNum(expectedTerminator, src -> s)._2
   }
 
   // Does not skip intermediate terminator, eg. `,`
-  private def skipOne(term: ExpectedTerminator)(implicit path: Vector[PPath]): Pipe = { stream =>
-    val noWS = skipWS(stream)
-    getChar(noWS) match {
-      case '"'      => skipStr(path)(noWS)
-      case 't'      => skipBool(path)(noWS)
-      case 'f'      => skipBool(path)(noWS)
-      case digit(_) => skipNum(term)(path)(noWS)
-      case sign(_)  => skipNum(term)(path)(noWS)
-      case '['      => skipArr(path)(noWS)
-      case '{'      => skipObject(path)(noWS)
+  private def skipOne(src: Array[Char], term: ExpectedTerminator)(
+      implicit path: Vector[PPath]): Pipe = { ptr =>
+    val noWS = skipWS(src, ptr)
+    getChar(src, noWS) match {
+      case '"'      => skipStr(src)(path)(noWS)
+      case 't'      => skipBool(src)(path)(noWS)
+      case 'f'      => skipBool(src)(path)(noWS)
+      case digit(_) => skipNum(src, term)(path)(noWS)
+      case sign(_)  => skipNum(src, term)(path)(noWS)
+      case '['      => skipArr(src)(path)(noWS)
+      case '{'      => skipObject(src)(path)(noWS)
       case unexp =>
         throw ParseFailure("One of(t, f, [, {)", unexp.toString, path)
     }
   }
 
-  private def skipArr(implicit path: Vector[PPath]): Pipe = { stream =>
-    val next = stream.next
-    getChar(stream) match {
+  private def skipArr(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { ptr =>
+    val next = ptr + 1
+    getChar(src, ptr) match {
       // expect arr to starts with [
       case '[' =>
-        getChar(next) match {
+        getChar(src, next) match {
           case ']' => next
-          case _   => takeTilArrayEnd(next)
+          case _   => takeTilArrayEnd(src, next)
         }
       case ue => throw ParseFailure("[", ue.toString, path)
     }
   }
 
-  private def takeTilArrayEnd(s: Input)(implicit path: Vector[PPath]): Input = {
-    val skippedSep = skipOne(OneOf(Bracket, Comma))(path)(s)
-    val skippedWs  = skipWS(skippedSep)
+  private def takeTilArrayEnd(src: Array[Char], ptr: Int)(implicit path: Vector[PPath]): Int = {
+    val skippedSep = skipOne(src, ExpectedTerminator.arrayTerm)(path)(ptr)
+    val skippedWs  = skipWS(src, skippedSep)
 
-    getChar(skippedWs) match {
-      case ']'   => skippedWs.next
-      case ','   => takeTilArrayEnd(skippedWs.next)
+    getChar(src, skippedWs) match {
+      case ']'   => skippedWs + 1
+      case ','   => takeTilArrayEnd(src, skippedWs + 1)
       case unexp => throw ParseFailure(",", unexp.toString, path)
     }
 
   }
 
-  private def parseObjKey(input: Input)(implicit path: Vector[PPath]): (String, Input) = {
-    val skipped = skipWS(input)
+  private def parseObjKey(src: Array[Char], ptr: Int)(
+      implicit path: Vector[PPath]): (String, Int) = {
+    val skipped = skipWS(src, ptr)
 
-    getChar(skipped) match {
+    getChar(src, skipped) match {
       case '"' =>
-        val keyStr = accJsString(skipped.next)
+        val keyStr = accJsString(src, skipped + 1)
 
         keyStr match {
           case (key, afterKey) =>
-            val skipAfterKey = skipWS(input._1 -> afterKey)
-            getChar(skipAfterKey) match {
-              case ':' => (key, skipAfterKey.next)
+            val skipAfterKey = skipWS(src, afterKey)
+            getChar(src, skipAfterKey) match {
+              case ':' => (key, skipAfterKey + 1)
               case o =>
                 throw ParseFailure(s": for key ${key.mkString} finding", o.toString, path)
             }
@@ -313,13 +356,13 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private def skipKVPairs(s: Input)(implicit path: Vector[PPath]): Input = {
-    parseObjKey(s) match {
+  private def skipKVPairs(src: Array[Char], ptr: Int)(implicit path: Vector[PPath]): Int = {
+    parseObjKey(src, ptr) match {
       case (_, next) =>
-        val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(next)
-        val skippedWS  = skipWS(skippedOne)
-        getChar(skippedWS) match {
-          case ','  => skipKVPairs(skippedWS.next)
+        val skippedOne = skipOne(src, ExpectedTerminator.objTerm)(path)(next)
+        val skippedWS  = skipWS(src, skippedOne)
+        getChar(src, skippedWS) match {
+          case ','  => skipKVPairs(src, skippedWS + 1)
           case '}'  => skippedWS
           case uexp => throw ParseFailure(", or }", uexp.toString, path)
         }
@@ -327,12 +370,12 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private def skipObject(implicit path: Vector[PPath]): Pipe = { s =>
-    getChar(s) match {
+  private def skipObject(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { ptr =>
+    getChar(src, ptr) match {
       case '{' =>
-        val skipKVs = skipKVPairs(s.next)
-        getChar(skipKVs) match {
-          case '}'  => skipKVs.next
+        val skipKVs = skipKVPairs(src, ptr + 1)
+        getChar(src, skipKVs) match {
+          case '}'  => skipKVs + 1
           case uexp => throw ParseFailure("}", uexp.toString, path)
         }
 
@@ -340,10 +383,10 @@ abstract class JsonArrayParse[F[_]](
         throw ParseFailure("{", uexp.toString, path)
     }
   }
-  private def parseSign(s: Input): (Option[Char], Input) = {
-    getChar(s) match {
-      case sign(sChar) => Some(sChar) -> s.next
-      case _           => None        -> s
+  private def parseSign(src: Array[Char], ptr: Int): (Option[Char], Int) = {
+    getChar(src, ptr) match {
+      case sign(sChar) => Some(sChar) -> (ptr + 1)
+      case _           => None        -> ptr
     }
   }
 
@@ -356,149 +399,152 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private case class Part1(part1: StringBuilder, sep: Option[Char], cont: Input)
-  private case class Part2(part2: StringBuilder, sep: Option[Char], cont: Input)
+  private case class Part1(until: Int, sep: Option[Char], next: Int)
+  private case class Part2(until: Int, sep: Option[Char], next: Int)
+  private case class Part3(until: Int, next: Int)
 
-  private def consumeTillTermination[A](s: Input)(term: ExpectedTerminator, f: Input => A)(
-      implicit p: Vector[PPath]): A = {
-    getChar(s) match {
-      case c if term.matchChar(c) => f(s)
+  private def consumeTillTermination[A](src: Array[Char], ptr: Int)(
+      term: ExpectedTerminator,
+      f: Int => A)(implicit p: Vector[PPath]): A = {
+    getChar(src, ptr) match {
+      case c if term.matchChar(c) => f(ptr)
       case uexp                   => throw ParseFailure(term.toString, uexp.toString, p)
     }
   }
 
-  private def parseNum1(s: Input)(term: ExpectedTerminator)(implicit p: Vector[PPath]): Part1 = {
+  private def parseNum1(src: Array[Char], ptr: Int)(term: ExpectedTerminator)(
+      implicit p: Vector[PPath]): Part1 = {
 
-    def recurse(acc: StringBuilder, s: Input): Part1 = {
-      val next = s.next
+    def recurse(acc: Int, curr: Int): Part1 = {
+      val next = curr + 1
 
-      getCharOpt(s) match {
+      getCharOpt(src, curr) match {
         case Some(c) =>
           c match {
-            case digit(d)               => recurse(acc.append(d), next)
-            case t if term.matchChar(t) => Part1(acc, None, s)
+            case digit(_)               => recurse(acc + 1, next)
+            case t if term.matchChar(t) => Part1(acc, None, curr)
             case '.'                    => Part1(acc, Some('.'), next)
             case 'E'                    => Part1(acc, Some('e'), next)
             case 'e'                    => Part1(acc, Some('e'), next)
-            case whitespace(_) =>
-              consumeTillTermination(next)(term, n => Part1(acc, None, n))
+            case whitespace(_)          =>
+              // is this correct? ie. can we allow ws in the middle of number?
+              // todo: check the spec
+              consumeTillTermination(src, next)(term, n => Part1(acc, None, n))
             case u =>
               throw ParseFailure(s"Digit or $term", u.toString, p)
           }
         case None =>
-          if (term == End && acc.nonEmpty) {
-            Part1(acc, None, s)
+          // todo: Need to consider OneOF
+          // might want to rethink if
+          // it makes sense to use OneOf ot capture everything
+          if (term.isEnd && acc > ptr) {
+            Part1(acc, None, curr)
           } else {
             throw ParseFailure.termination
           }
       }
     }
 
-    val (maybe, next) = parseSign(s)
-    val stringBuilder = new StringBuilder
-    maybe.foreach(stringBuilder.append)
-    recurse(stringBuilder, next)
+    val (maybeSign, next) = parseSign(src, ptr)
+    val acc               = maybeSign.fold(ptr)(_ => ptr + 1)
+    recurse(acc, next)
   }
 
-  private def parseNum2(s: Input, p1Sep: Char)(term: ExpectedTerminator)(
+  private def parseNum2(src: Array[Char], ptr: Int, p1Sep: Char)(term: ExpectedTerminator)(
       implicit p: Vector[PPath]): Part2 = {
-    def recurse(acc: StringBuilder, s: Input): Part2 = {
-      val next = s.next
-      getCharOpt(s) match {
+    def recurse(acc: Int, curr: Int): Part2 = {
+      val next = curr + 1
+      getCharOpt(src, curr) match {
         case Some(c) =>
           c match {
-            case digit(d)                    => recurse(acc.append(d), next)
-            case t if term.matchChar(t)      => Part2(acc, None, s)
+            case digit(_)                    => recurse(acc + 1, next)
+            case t if term.matchChar(t)      => Part2(acc, None, curr)
             case exponent(e) if p1Sep == '.' => Part2(acc, Some(e), next)
             case whitespace(_) =>
-              consumeTillTermination(next)(term, n => Part2(acc, None, n))
+              consumeTillTermination(src, next)(term, n => Part2(acc, None, n))
             case u =>
               throw ParseFailure(s"Digit or $term", u.toString, p)
           }
         case None =>
-          if (term == End && acc.nonEmpty) {
-            Part2(acc, None, s)
+          if (term.isEnd && acc > ptr) {
+            Part2(acc, None, curr)
           } else {
             throw ParseFailure.termination
           }
       }
     }
 
-    recurse(StringBuilder.newBuilder, s)
+    recurse(ptr, ptr)
   }
 
-  private def parseNum3(s: Input)(term: ExpectedTerminator)(
-      implicit path: Vector[PPath]): (StringBuilder, Input) = {
-    def recurse(acc: StringBuilder, s: Input): (StringBuilder, Input) = {
-      val next = s.next
-      getCharOpt(s) match {
+  private def parseNum3(src: Array[Char], ptr: Int)(term: ExpectedTerminator)(
+      implicit path: Vector[PPath]): Part3 = {
+
+    def recurse(acc: Int, curr: Int): Part3 = {
+      val next = curr + 1
+      getCharOpt(src, curr) match {
         case Some(c) =>
           c match {
-            case digit(d)               => recurse(acc.append(d), next)
-            case t if term.matchChar(t) => acc -> s
+            case digit(_)               => recurse(acc + 1, next)
+            case t if term.matchChar(t) => Part3(acc, curr)
             case whitespace(_) =>
-              consumeTillTermination(next)(term, n => acc -> n)
+              consumeTillTermination(src, next)(term, n => Part3(acc, n))
             case u =>
               throw ParseFailure(s"Digit or $term", u.toString, path)
           }
         case None =>
-          if (term == End && acc.nonEmpty) {
-            acc -> s
+          if (term.isEnd && acc > ptr) {
+            Part3(acc, curr)
           } else {
             throw ParseFailure.termination
           }
       }
     }
 
-    val (maybe, next) = parseSign(s)
-    val stringBuilder = new StringBuilder
-    maybe.foreach(stringBuilder.append)
-    recurse(stringBuilder, next)
+    val (maybeSign, next) = parseSign(src, ptr)
+    val acc               = maybeSign.fold(ptr)(_ => ptr + 1)
+
+    recurse(acc, next)
   }
 
   implicit val ParseApp: Applicative[Parse] = new Applicative[Parse] {
     override def pure[A](x: A): Parse[A] = { path => src =>
-      ME.pure(x -> src)
+      ME.pure(x)
     }
     override def ap[A, B](ff: Parse[A => B])(fa: Parse[A]): Parse[B] = { path => src =>
       for {
-        pair1           <- ff(path)(src): F[(A => B, Input)]
-        (fn, _)         = pair1
-        pair2           <- fa(path)(src): F[(A, Input)]
-        (a, restSource) = pair2
+        fn <- ff(path)(src): F[A => B]
+        a  <- fa(path)(src): F[A]
       } yield {
-        fn(a) -> restSource
+        fn(a)
       }
     }
   }
 
   def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
-    (parseObj(discriminatorField, parseString)(path)(src): F[(String, Input)]).flatMap {
-      case (key, _) =>
-        oneOf(key) match {
-          case Some(parseFn) => parseFn.value(path)(src)
-          case None =>
-            ME.raiseError[(I, Input)](ParseFailure(s"Cannot parse object with type=$key"))
-        }
+    (parseObj(discriminatorField, parseString)(path)(src): F[String]).flatMap { key =>
+      oneOf(key) match {
+        case Some(parseFn) => parseFn.value(path)(src)
+        case None =>
+          ME.raiseError[I](ParseFailure(s"Cannot parse object with type=$key"))
+      }
     }
   }
 
   def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
-    (parse(path)(src): F[(I, Input)])
-      .map[(Option[I], Input)] {
-        case (i, next) =>
-          // WARNING: runtime flattening of None
-          // We dont flatten nested Some (eg. Some(Some(x)) => Some(x))
-          // because that would break the type
-          // ie. None <: Option[Option[Option[?]]] is generally true
-          // but Some(x) <: Option[Option[Option[?]]] is not
-          i match {
-            case None => None    -> next
-            case _    => Some(i) -> next
-          }
+    (parse(path)(src): F[I])
+      .map[Option[I]] {
+
+        // WARNING: runtime flattening of None
+        // We dont flatten nested Some (eg. Some(Some(x)) => Some(x))
+        // because that would break the type
+        // ie. None <: Option[Option[Option[?]]] is generally true
+        // but Some(x) <: Option[Option[Option[?]]] is not
+        case None => None
+        case i    => Some(i)
       }
       .recover {
-        case _ => None -> src
+        case _ => None
       }
   }
 
@@ -509,7 +555,14 @@ abstract class JsonArrayParse[F[_]](
 object JsonArrayParse {
 
   type Input           = (Array[Char], Int)
-  type Output[F[_], A] = F[(A, Input)]
+  type Output[F[_], A] = F[A]
+
+  implicit class StringOps(fullSource: Array[Char]) {
+    def isFollowedBy(i: Int)(str: String): (Boolean, Int) = {
+      val slice = fullSource.slice(i, i + str.length)
+      slice.sameElements(str.toCharArray) -> (i + str.length)
+    }
+  }
 
   implicit class PointerOps(input: Input) {
     def isFollowedBy(str: String): (Boolean, Int) = {

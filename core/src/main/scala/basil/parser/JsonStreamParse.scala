@@ -238,7 +238,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
   }
 
   private def takeTilArrayEnd(implicit path: Vector[PPath]): Pipe = { s =>
-    val skipped = skipOne(OneOf(Bracket, Comma))(path)(s)
+    val skipped = skipOne(ExpectedTerminator.arrayTerm)(path)(s)
 
     skipWS(skipped).take1.flatMap {
       case (']', next) => next
@@ -271,7 +271,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
   private def skipKVPairs(implicit path: Vector[PPath]): Pipe = { s =>
     parseObjKey(s).flatMap {
       case (_, next) =>
-        val skippedOne = skipOne(OneOf(Comma, CurlyBrace))(path)(next)
+        val skippedOne = skipOne(ExpectedTerminator.objTerm)(path)(next)
 
         skipWS(skippedOne).peek1.flatMap {
           case (',', next) => skipKVPairs(path)(next.drop1)
@@ -337,7 +337,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case (u, _) =>
           ME.raiseError[Part1](ParseFailure(s"Digit or $term", u.toString, p))
       } { () =>
-        if (term == End && acc.nonEmpty) {
+        if (term.isEnd && acc.nonEmpty) {
           ME.pure(Part1(acc, None, Monoid.empty))
         } else {
           ME.raiseError(ParseFailure.termination)
@@ -362,7 +362,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
         case (u, _) =>
           ME.raiseError[Part2](ParseFailure(s"Digit or $term", u.toString, p))
       } { () =>
-        if (term == End && acc.nonEmpty) {
+        if (term.isEnd && acc.nonEmpty) {
           ME.pure(Part2(acc, None, Monoid.empty))
         } else {
           ME.raiseError(ParseFailure.termination)
@@ -384,7 +384,7 @@ abstract class JsonStreamParse[Source[_]](implicit TakeOne: TakeOne[Source],
           ME.raiseError[(Vector[Char], CharSource)](
             ParseFailure(s"Digit or $term", u.toString, path))
       } { () =>
-        if (term == End && acc.nonEmpty) {
+        if (term.isEnd && acc.nonEmpty) {
           ME.pure(acc -> s)
         } else {
           ME.raiseError(ParseFailure.termination)

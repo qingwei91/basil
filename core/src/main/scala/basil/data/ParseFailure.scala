@@ -12,6 +12,8 @@ object ParseFailure {
   def apply(expect: String, received: String, path: Vector[PPath]): ParseFailure =
     ParseFailure(s"Expect $expect, but got $received", path)
 
+  // todo: This message is poor as it does not says where did
+  // provided string terminate
   def termination(implicit path: Vector[PPath]): ParseFailure =
     ParseFailure("Unexpected termination", path)
 }

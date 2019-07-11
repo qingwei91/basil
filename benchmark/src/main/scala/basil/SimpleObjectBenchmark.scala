@@ -7,9 +7,9 @@ import basil.derive.DeriveParseOps
 import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
-import io.circe.generic.extras.auto._
+//import io.circe.generic.extras.auto._
 import io.circe.generic.extras.Configuration
-import io.circe.parser._
+//import io.circe.parser._
 import org.openjdk.jmh.annotations._
 
 case class Simple(a: Double, b: String, c: Boolean)
@@ -28,10 +28,8 @@ class SimpleObjectBenchmark {
       | "c": false
       |}""".stripMargin
 
-
-
   type In   = (Array[Char], Int)
-  type F[A] = Either[ParseFailure, (A, In)]
+  type F[A] = Either[ParseFailure, A]
 
   import DeriveParseOps._
 
@@ -41,12 +39,11 @@ class SimpleObjectBenchmark {
       .parseG[In, F, Simple](Start.getType[Simple].eval, jsonString1.toCharArray -> 0)
       .right
       .get
-      ._1
   }
 
-  @Benchmark
-  def readCirce(): Simple = {
-    decode[Simple](jsonString1).fold(e => throw e, x => x)
-  }
+//  @Benchmark
+//  def readCirce(): Simple = {
+//    decode[Simple](jsonString1).fold(e => throw e, x => x)
+//  }
 
 }

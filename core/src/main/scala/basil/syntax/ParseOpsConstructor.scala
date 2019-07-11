@@ -45,7 +45,7 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
             outer[I].cont(inner)
           }
 
-          Cont(cont, OneOf(Comma, CurlyBrace))
+          Cont(cont, ExpectedTerminator.objTerm)
         }
       }
     }
@@ -57,7 +57,7 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
             val inner = HFix(GetN(n, next))
             outer[I].cont(inner)
           }
-          Cont(cont, OneOf(Comma, Bracket))
+          Cont(cont, ExpectedTerminator.arrayTerm)
         }
       }
     }
@@ -72,7 +72,7 @@ object ParseOpsConstructor extends FreeParseOpsInstances {
             outer[Option[I]].cont(inner)
           }
 
-          Cont[ParseOps, FO, I](cont, OneOf(Comma, CurlyBrace, Bracket))
+          Cont[ParseOps, FO, I](cont, ExpectedTerminator.allExceptEnd)
         }
       }
     }
@@ -95,7 +95,7 @@ trait FreeParseOpsInstances {
     * OneOf(Comma, CurlyBrace)
     * */
   implicit val getNum: HFix[ParseOps, Double] =
-    HFix[ParseOps, Double](GetNum(OneOf(Comma, CurlyBrace)))
+    HFix[ParseOps, Double](GetNum(ExpectedTerminator.objTerm))
 
   implicit def getOpt[I](implicit getI: HFix[ParseOps, I]): HFix[ParseOps, Option[I]] = {
     HFix[ParseOps, Option[I]](GetOpt(getI))
