@@ -32,11 +32,12 @@ class SimpleObjectBenchmark {
   type F[A] = Either[ParseFailure, A]
 
   import DeriveParseOps._
+  val query = Start.getType[Simple].eval
 
   @Benchmark
   def basilRead(): Simple = {
     Parser
-      .parseG[In, F, Simple](Start.getType[Simple].eval, jsonString1.toCharArray -> 0)
+      .parseG[In, F, Simple](query, jsonString1.toCharArray -> 0)
       .right
       .get
   }
