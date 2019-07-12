@@ -15,20 +15,16 @@ class Testbed extends WordSpec {
       | "c": false
       |}""".stripMargin
 
-
-
   type In   = (Array[Char], Int)
-  type F[A] = Either[ParseFailure, (A, In)]
+  type F[A] = Either[ParseFailure, A]
 
   import DeriveParseOps._
-
 
   def basilRead(): Simple = {
     Parser
       .parseG[In, F, Simple](Start.getType[Simple].eval, jsonString1.toCharArray -> 0)
       .right
       .get
-      ._1
   }
 
   "test" in {

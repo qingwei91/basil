@@ -25,18 +25,6 @@ abstract class JsonArrayParse[F[_]](
 
   type Pipe = Int => Int
 
-  private def getChar(fullSource: Array[Char], i: Int): Char = {
-    fullSource(i)
-  }
-
-  private def getCharOpt(fullSource: Array[Char], i: Int): Option[Char] = {
-    try {
-      Some(fullSource(i))
-    } catch {
-      case _: ArrayIndexOutOfBoundsException => None
-    }
-  }
-
   private def wrap[A](a: => A)(implicit path: Vector[PPath]): F[A] = ME.fromEither {
     try {
       Right(a)
@@ -576,4 +564,17 @@ object JsonArrayParse {
 
     def pointTo(i: Int): Input = input._1 -> i
   }
+
+  private def getChar(fullSource: Array[Char], i: Int): Char = {
+    fullSource(i)
+  }
+
+  private def getCharOpt(fullSource: Array[Char], i: Int): Option[Char] = {
+    try {
+      Some(fullSource(i))
+    } catch {
+      case _: ArrayIndexOutOfBoundsException => None
+    }
+  }
+
 }
