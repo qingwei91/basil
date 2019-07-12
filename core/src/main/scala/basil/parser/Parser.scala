@@ -1,10 +1,7 @@
 package basil.parser
 
+import basil.data.ParseOps.ParseOpsHFunctor
 import basil.data._
-import ParseOps.ParseOpsHFunctor
-import basil.typeclass.EffStack
-
-import scala.util.{Failure, Success, Try}
 
 object Parser {
   val initPath = Vector.empty[PPath]
@@ -29,18 +26,9 @@ object Parser {
   }
 
   // this method might be ineffcient, benchmark needed
-  def parseString[I](expr: HFix[ParseOps, I], src: String)(
-      implicit parse: JsonStreamParse[EffStack[Try, List, ?]]): Try[I] = {
-    HFix
-      .cata[ParseOps, I, parse.Parse](expr, parse.parsing)
-      .apply(initPath)(Success(src.toList))
-      .flatMap {
-        _.headOption
-          .map(_._1)
-          .fold[Try[I]](Failure(ParseFailure.termination(initPath)))(
-            i => Success(i)
-          )
-      }
+  def parseString[F[_], I](expr: HFix[ParseOps, I], src: String)(
+      implicit parse: JsonParse[(Array[Char], Int), F]): F[I] = {
+    parseG(expr, src.toCharArray -> 0)
   }
 }
 

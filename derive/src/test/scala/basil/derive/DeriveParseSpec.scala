@@ -8,8 +8,6 @@ import org.json4s.JsonDSL._
 import org.json4s.native.JsonMethods.{pretty, render}
 import org.scalatest.{MustMatchers, WordSpec}
 
-import scala.util.Success
-
 class DeriveParseSpec extends WordSpec with MustMatchers {
   sealed trait Status
   case object Married extends Status
@@ -31,26 +29,26 @@ class DeriveParseSpec extends WordSpec with MustMatchers {
     val jsString = pretty(render(js))
     val res      = Parser.parseString(what, jsString)
 
-    res mustBe Success(Order("hoho", "20", Person("Qing", 20, Married, Some("hoho"))))
+    res mustBe Right(Order("hoho", "20", Person("Qing", 20, Married, Some("hoho"))))
   }
 
   sealed trait Dir
-  case class Left(i: String)      extends Dir
-  case class Right(i: String)     extends Dir
+  case class L(i: String)         extends Dir
+  case class R(i: String)         extends Dir
   case class More(a: Dir, b: Dir) extends Dir
 
   "Able to derive recursive ADT" in {
     val tree = Start.getType[Dir].eval
     val js = ("type" -> "More") ~ ("a" -> (
-      ("type" -> "Left") ~
-        ("i"            -> "left....")
+      ("type" -> "L") ~
+        ("i"  -> "left....")
     )) ~ ("b" -> (
-      ("type" -> "Right") ~
-        ("i"            -> "left....")
+      ("type" -> "R") ~
+        ("i"  -> "left....")
     ))
 
     val str = pretty(render(js))
     val r   = Parser.parseString(tree, str)
-    r mustBe Success(More(Left("left...."), Right("left....")))
+    r mustBe Right(More(L("left...."), R("left....")))
   }
 }
