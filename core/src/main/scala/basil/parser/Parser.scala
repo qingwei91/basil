@@ -28,7 +28,12 @@ object Parser {
   // this method might be ineffcient, benchmark needed
   def parseString[F[_], I](expr: HFix[ParseOps, I], src: String)(
       implicit parse: JsonParse[(Array[Char], Int), F]): F[I] = {
-    parseG(expr, src.toCharArray -> 0)
+    parseArrayChar(expr, src.toCharArray)
+  }
+
+  def parseArrayChar[F[_], I](expr: HFix[ParseOps, I], src: Array[Char])(
+      implicit parse: JsonParse[(Array[Char], Int), F]): F[I] = {
+    parseG(expr, src -> 0)
   }
 }
 

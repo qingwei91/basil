@@ -7,9 +7,7 @@ import basil.derive.DeriveParseOps
 import basil.parser.Parser
 import basil.parser.implicits._
 import basil.syntax.ParseOpsConstructor._
-import io.circe.generic.extras.auto._
-import io.circe.generic.extras.Configuration
-import io.circe.parser._
+
 import org.openjdk.jmh.annotations._
 
 case class Simple(a: Double, b: String, c: Boolean)
@@ -18,14 +16,20 @@ case class Simple(a: Double, b: String, c: Boolean)
 @BenchmarkMode(Array(Mode.Throughput))
 @State(Scope.Thread)
 class SimpleObjectBenchmark {
-  implicit val genDevConfig: Configuration =
-    Configuration.default.withDiscriminator("type")
 
   val jsonString1: String =
     """{
       | "a": 200,
       | "b": "hello\t world!!!!!",
-      | "c": false
+      | "c": false,
+      | "e": false,
+      | "f": false,
+      | "g": false,
+      | "h": false,
+      | "i": false,
+      | "j": false,
+      | "k": false,
+      | "l": false
       |}""".stripMargin
 
   type In   = (Array[Char], Int)
@@ -37,14 +41,25 @@ class SimpleObjectBenchmark {
   @Benchmark
   def basilRead(): Simple = {
     Parser
-      .parseG[In, F, Simple](query, jsonString1.toCharArray -> 0)
+      .parseString[F, Simple](query, jsonString1)
       .right
       .get
   }
+
+  import io.circe.generic.extras.auto._
+  import io.circe.generic.extras.Configuration
+  import io.circe.parser._
+  implicit val genDevConfig: Configuration =
+    Configuration.default.withDiscriminator("type")
 
   @Benchmark
   def readCirce(): Simple = {
     decode[Simple](jsonString1).fold(e => throw e, x => x)
   }
 
+  import upickle.default._
+  @Benchmark
+  def readUPickle(): Simple = {
+    read[Simple](jsonString1)(macroR[Simple])
+  }
 }
