@@ -29,6 +29,7 @@ abstract class ParseSpec[Input, Output[_]] extends Specification with ScalaCheck
         - parse Partial Object  - $parsePartialObjSpec
         - parse Product type    - $parseProductTypeSpec
         - parse Optional value  - $parseOptionalSpec
+        - NOT parse invalid num - $parseInvalidNumSpec
       """
 
   // JsonParse implementation to test
@@ -102,6 +103,15 @@ abstract class ParseSpec[Input, Output[_]] extends Specification with ScalaCheck
       decoded must_=== num.values
     }
   }
+
+  def parseInvalidNumSpec = {
+    import parser._
+
+    val jsonStr = "e21".toCharArray
+
+    parseNumber(End)(path)(liftF(jsonStr)).getVal must throwA[NumberFormatException]
+  }
+
   def parseArrSpec = {
     import parser._
     val i = 12
