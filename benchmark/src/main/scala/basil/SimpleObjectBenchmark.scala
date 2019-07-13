@@ -26,6 +26,13 @@ class SimpleObjectBenchmark {
       | "f": false,
       | "g": false,
       | "h": false,
+      | "meh": {
+      |   "halo": "world",
+      |   "ni": "world",
+      |   "hao": "world",
+      |   "hehe": "world",
+      |   "my": "world"
+      | },
       | "i": false,
       | "j": false,
       | "k": false,
