@@ -1,17 +1,18 @@
 package basil.parser
 
 import basil.data._
-import basil.typeclass.Lazy
+import basil.typeclass.{ArrayCharLike, Lazy}
+import basil.typeclass.ArrayCharLike.Ops
 import cats.data.NonEmptyMap
 import cats.implicits._
 import cats.{Applicative, MonadError, ~>}
-
 import JsonArrayParse._
 
 // Core logic to parse Array[Char] as json and extract data
-abstract class JsonArrayParse[F[_]](
+abstract class JsonArrayParse[F[_], Input](
     implicit ME: MonadError[F, ParseFailure],
-) extends JsonParse[Input, Output[F, ?]] {
+    In: ArrayCharLike[Input]
+) extends JsonParse[InAndPos[Input], Output[F, ?]] {
 
   private val discriminatorField: String = "type"
 
@@ -26,7 +27,8 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private def unsafeParseString(src: Input)(implicit path: Vector[PPath]): (String, Int) = {
+  private def unsafeParseString(src: InAndPos[Input])(
+      implicit path: Vector[PPath]): (String, Int) = {
     val (full, pointer) = src
     val latestI         = skipWS(full, pointer)
     val firstC          = getChar(full, latestI)
@@ -44,7 +46,8 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private def unsafeParseBool(src: Input)(implicit path: Vector[PPath]): (Boolean, Int) = {
+  private def unsafeParseBool(src: InAndPos[Input])(
+      implicit path: Vector[PPath]): (Boolean, Int) = {
     val (full, ptr)    = src
     val withoutWS      = skipWS(full, ptr)
     val (isTrue, next) = full.isFollowedBy(withoutWS)("true")
@@ -79,7 +82,7 @@ abstract class JsonArrayParse[F[_]](
     * @param terminator to indicate what character terminates the number
     * @return
     */
-  private def unsafeParseNum(terminator: ExpectedTerminator, input: Input)(
+  private def unsafeParseNum(terminator: ExpectedTerminator, input: InAndPos[Input])(
       implicit path: Vector[PPath]): (Double, Int) = {
     val (fullSrc, i) = input
     val start        = skipWS(fullSrc, i)
@@ -92,7 +95,7 @@ abstract class JsonArrayParse[F[_]](
             parseNum3(fullSrc, next)(terminator) match {
 
               case Part3(p3, next) =>
-                val full = new String(fullSrc.slice(start, p3))
+                val full = fullSrc.slice(start, p3).formString
 
                 try {
                   full.toDouble -> next
@@ -102,12 +105,12 @@ abstract class JsonArrayParse[F[_]](
 
             }
           case Part2(p2End, None, next) =>
-            val full = new String(fullSrc.slice(start, p2End))
+            val full = fullSrc.slice(start, p2End).formString
 
             full.toDouble -> next
         }
       case Part1(p1End, None, next) =>
-        val p1 = new String(fullSrc.slice(start, p1End))
+        val p1 = fullSrc.slice(start, p1End).formString
         p1.toDouble -> next
     }
   }
@@ -168,35 +171,35 @@ abstract class JsonArrayParse[F[_]](
 
   // todo: handle unicode ??? (maybe just dont support it)
 
-  private def skipStr(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { s =>
+  private def skipStr(src: Input)(implicit path: Vector[PPath]): Pipe = { s =>
     unsafeParseString(src -> s)._2
   }
-  private def skipBool(src: Array[Char])(implicit path: Vector[PPath]): Pipe =
+  private def skipBool(src: Input)(implicit path: Vector[PPath]): Pipe =
     s => unsafeParseBool(src -> s)._2
 
-  private def skipNum(src: Array[Char], expectedTerminator: ExpectedTerminator)(
+  private def skipNum(src: Input, expectedTerminator: ExpectedTerminator)(
       implicit path: Vector[PPath]): Pipe = { s =>
     unsafeParseNum(expectedTerminator, src -> s)._2
   }
 
   // Does not skip intermediate terminator, eg. `,`
-  private def skipOne(src: Array[Char], term: ExpectedTerminator)(
-      implicit path: Vector[PPath]): Pipe = { ptr =>
-    val noWS = skipWS(src, ptr)
-    getChar(src, noWS) match {
-      case '"'      => skipStr(src)(path)(noWS)
-      case 't'      => skipBool(src)(path)(noWS)
-      case 'f'      => skipBool(src)(path)(noWS)
-      case digit(_) => skipNum(src, term)(path)(noWS)
-      case sign(_)  => skipNum(src, term)(path)(noWS)
-      case '['      => skipArr(src)(path)(noWS)
-      case '{'      => skipObject(src)(path)(noWS)
-      case unexp =>
-        throw ParseFailure("One of(t, f, [, {)", unexp.toString, path)
-    }
+  private def skipOne(src: Input, term: ExpectedTerminator)(implicit path: Vector[PPath]): Pipe = {
+    ptr =>
+      val noWS = skipWS(src, ptr)
+      getChar(src, noWS) match {
+        case '"'      => skipStr(src)(path)(noWS)
+        case 't'      => skipBool(src)(path)(noWS)
+        case 'f'      => skipBool(src)(path)(noWS)
+        case digit(_) => skipNum(src, term)(path)(noWS)
+        case sign(_)  => skipNum(src, term)(path)(noWS)
+        case '['      => skipArr(src)(path)(noWS)
+        case '{'      => skipObject(src)(path)(noWS)
+        case unexp =>
+          throw ParseFailure("One of(t, f, [, {)", unexp.toString, path)
+      }
   }
 
-  private def skipArr(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { ptr =>
+  private def skipArr(src: Input)(implicit path: Vector[PPath]): Pipe = { ptr =>
     val next = ptr + 1
     getChar(src, ptr) match {
       // expect arr to starts with [
@@ -209,7 +212,7 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private def takeTilArrayEnd(src: Array[Char], ptr: Int)(implicit path: Vector[PPath]): Int = {
+  private def takeTilArrayEnd(src: Input, ptr: Int)(implicit path: Vector[PPath]): Int = {
     val skippedSep = skipOne(src, ExpectedTerminator.arrayTerm)(path)(ptr)
     val skippedWs  = skipWS(src, skippedSep)
 
@@ -221,7 +224,7 @@ abstract class JsonArrayParse[F[_]](
 
   }
 
-  private def skipKVPairs(src: Array[Char], ptr: Int)(implicit path: Vector[PPath]): Int = {
+  private def skipKVPairs(src: Input, ptr: Int)(implicit path: Vector[PPath]): Int = {
     parseObjKey(src, ptr) match {
       case (_, next) =>
         val skippedOne = skipOne(src, ExpectedTerminator.objTerm)(path)(next)
@@ -235,7 +238,7 @@ abstract class JsonArrayParse[F[_]](
     }
   }
 
-  private def skipObject(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { ptr =>
+  private def skipObject(src: Input)(implicit path: Vector[PPath]): Pipe = { ptr =>
     getChar(src, ptr) match {
       case '{' =>
         val skipKVs = skipKVPairs(src, ptr + 1)
@@ -292,43 +295,21 @@ abstract class JsonArrayParse[F[_]](
 
   val parsing: ParseOps[Parse, ?] ~> Parse = parsingM
 
-}
-
-object JsonArrayParse {
-
-  type Input           = (Array[Char], Int)
-  type Output[F[_], A] = F[A]
-  type Pipe            = Int => Int
-
-  implicit class StringOps(fullSource: Array[Char]) {
+  implicit class StringOps(fullSource: Input) {
     def isFollowedBy(i: Int)(str: String): (Boolean, Int) = {
       val slice = fullSource.slice(i, i + str.length)
-      slice.sameElements(str.toCharArray) -> (i + str.length)
+      (slice.formString == str) -> (i + str.length)
     }
   }
 
-  implicit class PointerOps(input: Input) {
-    def isFollowedBy(str: String): (Boolean, Int) = {
-      val (fullSource, i) = input
-      val slice           = fullSource.slice(i, i + str.length)
-      slice.sameElements(str.toCharArray) -> (i + str.length)
-    }
-
-    def next: Input         = move(1)
-    def move(i: Int): Input = (input._1, input._2 + i)
-
-    def pointTo(i: Int): Input = input._1 -> i
-  }
-
-  private def skipComma(src: Array[Char])(implicit path: Vector[PPath]): Pipe = { s =>
+  private def skipComma(src: Input)(implicit path: Vector[PPath]): Pipe = { s =>
     getChar(src, s) match {
       case ',' => s + 1
       case u   => throw ParseFailure(",", u.toString, path)
     }
   }
 
-  private def parseObjKey(src: Array[Char], ptr: Int)(
-      implicit path: Vector[PPath]): (String, Int) = {
+  private def parseObjKey(src: Input, ptr: Int)(implicit path: Vector[PPath]): (String, Int) = {
     val skipped = skipWS(src, ptr)
 
     getChar(src, skipped) match {
@@ -349,19 +330,17 @@ object JsonArrayParse {
     }
   }
 
-  private def getChar(fullSource: Array[Char], i: Int): Char = {
+  private def getChar(fullSource: Input, i: Int): Char = {
     fullSource(i)
   }
 
-  private def getCharOpt(fullSource: Array[Char], i: Int): Option[Char] = {
-    try {
+  private def getCharOpt(fullSource: Input, i: Int): Option[Char] = {
+    if (fullSource.isDefinedAt(i)) {
       Some(fullSource(i))
-    } catch {
-      case _: ArrayIndexOutOfBoundsException => None
-    }
+    } else None
   }
 
-  private def skipWS(fullSource: Array[Char], i: Int): Int = {
+  private def skipWS(fullSource: Input, i: Int): Int = {
 
     if (fullSource.isDefinedAt(i)) {
       fullSource(i) match {
@@ -373,8 +352,7 @@ object JsonArrayParse {
     }
   }
 
-  private def accJsString(full: Array[Char], i: Int)(
-      implicit path: Vector[PPath]): (String, Int) = {
+  private def accJsString(full: Input, i: Int)(implicit path: Vector[PPath]): (String, Int) = {
 
     // lastCharIsSpecial - we need to know if last
     // char is special or not, so that we can
@@ -441,7 +419,7 @@ object JsonArrayParse {
     }
 
     end match {
-      case Some(e) => (new String(full.slice(i, e)), e + 1)
+      case Some(e) => (full.slice(i, e).formString, e + 1)
 
       case None if firstEscape.isEmpty =>
         // not reach end and no escape char, invalid
@@ -454,7 +432,7 @@ object JsonArrayParse {
 
   }
 
-  private def parseSign(src: Array[Char], ptr: Int): (Option[Char], Int) = {
+  private def parseSign(src: Input, ptr: Int): (Option[Char], Int) = {
     getChar(src, ptr) match {
       case sign(sChar) => Some(sChar) -> (ptr + 1)
       case _           => None        -> ptr
@@ -465,7 +443,7 @@ object JsonArrayParse {
   private case class Part2(until: Int, sep: Option[Char], next: Int)
   private case class Part3(until: Int, next: Int)
 
-  private def consumeTillTermination[A](src: Array[Char], ptr: Int)(
+  private def consumeTillTermination[A](src: Input, ptr: Int)(
       term: ExpectedTerminator,
       f: Int => A)(implicit p: Vector[PPath]): A = {
     getChar(src, ptr) match {
@@ -474,7 +452,7 @@ object JsonArrayParse {
     }
   }
 
-  private def parseNum1(src: Array[Char], ptr: Int)(term: ExpectedTerminator)(
+  private def parseNum1(src: Input, ptr: Int)(term: ExpectedTerminator)(
       implicit p: Vector[PPath]): Part1 = {
 
     def recurse(acc: Int, curr: Int): Part1 = {
@@ -512,7 +490,7 @@ object JsonArrayParse {
     recurse(acc, next)
   }
 
-  private def parseNum2(src: Array[Char], ptr: Int, p1Sep: Char)(term: ExpectedTerminator)(
+  private def parseNum2(src: Input, ptr: Int, p1Sep: Char)(term: ExpectedTerminator)(
       implicit p: Vector[PPath]): Part2 = {
     def recurse(acc: Int, curr: Int): Part2 = {
       val next = curr + 1
@@ -539,7 +517,7 @@ object JsonArrayParse {
     recurse(ptr, ptr)
   }
 
-  private def parseNum3(src: Array[Char], ptr: Int)(term: ExpectedTerminator)(
+  private def parseNum3(src: Input, ptr: Int)(term: ExpectedTerminator)(
       implicit path: Vector[PPath]): Part3 = {
 
     def recurse(acc: Int, curr: Int): Part3 = {
@@ -568,4 +546,10 @@ object JsonArrayParse {
 
     recurse(acc, next)
   }
+}
+
+object JsonArrayParse {
+  type InAndPos[I]     = (I, Int)
+  type Output[F[_], A] = F[A]
+  type Pipe            = Int => Int
 }

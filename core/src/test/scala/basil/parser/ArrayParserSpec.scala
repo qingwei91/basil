@@ -5,7 +5,7 @@ import basil.parser.ArrayParserSpec._
 import basil.parser.implicits.ArrayParse
 
 class ArrayParserSpec extends ParseSpec[Input, Output] {
-  override implicit val parser: JsonArrayParse[Either[ParseFailure, ?]] = ArrayParse
+  override implicit val parser: JsonArrayParse[Either[ParseFailure, ?], Array[Char]] = ArrayParse
 
   override def liftF(charArr: Array[Char]): Input = charArr -> 0
 
