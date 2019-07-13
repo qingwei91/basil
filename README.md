@@ -2,11 +2,9 @@
 
 ![Build](https://travis-ci.org/qingwei91/basil.svg?branch=master)
 
-A json `Decoder` that can extract data from partial, incomplete json.
+A json `Decoder` that can extract data without reading everything from a input json.
 
 The main idea is to describe the data you need from json as recursive data structure called `ParseOps`, which then get interpreted into a `Parse` function which have a signature of `String => YourData` that you can use to parse json, the actual function signature is slightly more complex, but the idea is the same.
-
-Json from `Array[Char]` is not supported now because Array cannot form a Monad trivially, one could convert `Array[Char]` to `List[Char]` for now.
 
 **Warning**: This library is an experiment, it is not production ready.
 
@@ -21,7 +19,7 @@ libraryDependencies += Seq(
 
 ### Features
 
-* Extract data from partial json, eg. `fs2.Stream[Char]`
+* Extract data from partial json, it works as long as the part to be extract is valid
 * No intermediate json ast, eg. you get `"mystring"` instead of `JString("mystring")`
 * Composable parse tree via FreeApplicative, eg. `GetString + GetNum => GetStringAndNum`
 * Extract data for case class automatically via `basil-derive` module
@@ -78,7 +76,19 @@ For more example, check out the test:
 
 ### How to compose ParseOps?
 
-todo!!
+`ParseOps` is a sealed trait, it supports 2 ways of composition by `GetSum` and `GetProduct`, which represent Sum Type and Product Type respectively.
+
+```scala
+final case class GetSum[F[_], I](oneOf: NonEmptyMap[String, Lazy[F[I]]]) extends ParseOps[F, I]
+```
+
+GetSum expresses that the data we want should be one of the entries on the NonEmptyMap, it expects a `type` field in the json to match with the `key` of the NonEmptyMap to know which path to choose
+
+```scala
+final case class GetProduct[F[_], I](allOf: FreeApplicative[F, I]) extends ParseOps[F, I]
+```
+
+GetProduct expresses that we want a combination of multiple field, it make uses of `FreeApplicative`, which describes a combination of multiple effects. 
 
 ### How it works
 
