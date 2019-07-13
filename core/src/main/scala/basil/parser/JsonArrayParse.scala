@@ -18,100 +18,15 @@ abstract class JsonArrayParse[F[_], Input](
 
   type Pipe = Int => Int
 
-  private def wrap[A](a: => A)(implicit path: Vector[PPath]): F[A] = ME.fromEither {
-    try {
-      Right(a)
-    } catch {
-      case _: ArrayIndexOutOfBoundsException => Left(ParseFailure.termination)
-      case e: ParseFailure                   => Left(e)
-    }
-  }
-
-  private def unsafeParseString(src: InAndPos[Input])(
-      implicit path: Vector[PPath]): (String, Int) = {
-    val (full, pointer) = src
-    val latestI         = skipWS(full, pointer)
-    val firstC          = getChar(full, latestI)
-
-    firstC match {
-      case '"' => accJsString(full, latestI + 1)
-      case other =>
-        throw ParseFailure(s"""String should starts with ", but found $other""", path)
-    }
-  }
-
   val parseString: Parse[String] = { implicit path => src =>
     wrap {
       unsafeParseString(src)._1
     }
   }
 
-  private def unsafeParseBool(src: InAndPos[Input])(
-      implicit path: Vector[PPath]): (Boolean, Int) = {
-    val (full, ptr)    = src
-    val withoutWS      = skipWS(full, ptr)
-    val (isTrue, next) = full.isFollowedBy(withoutWS)("true")
-
-    if (isTrue) {
-      true -> next
-    } else {
-      val (isFalse, next) = full.isFollowedBy(withoutWS)("false")
-      if (isFalse) {
-        false -> next
-      } else {
-        throw ParseFailure("Expecting either `true` or `false`", path)
-      }
-    }
-  }
-
   val parseBoolean: Parse[Boolean] = { implicit path => src =>
     wrap {
       unsafeParseBool(src)._1
-    }
-  }
-
-  /**
-    * Number is broken down into 3 parts
-    *
-    * 20.6e10
-    *
-    * part 1 - 20 terminated by .
-    * part 2 - 6 terminated by e
-    * part 3 - 10 terminated by terminator
-    *
-    * @param terminator to indicate what character terminates the number
-    * @return
-    */
-  private def unsafeParseNum(terminator: ExpectedTerminator, input: InAndPos[Input])(
-      implicit path: Vector[PPath]): (Double, Int) = {
-    val (fullSrc, i) = input
-    val start        = skipWS(fullSrc, i)
-
-    parseNum1(fullSrc, start)(terminator) match {
-      case Part1(_, Some(sep1), next) =>
-        parseNum2(fullSrc, next, sep1)(terminator) match {
-
-          case Part2(_, Some(_), next) =>
-            parseNum3(fullSrc, next)(terminator) match {
-
-              case Part3(p3, next) =>
-                val full = fullSrc.slice(start, p3).formString
-
-                try {
-                  full.toDouble -> next
-                } catch {
-                  case e: NumberFormatException => throw e
-                }
-
-            }
-          case Part2(p2End, None, next) =>
-            val full = fullSrc.slice(start, p2End).formString
-
-            full.toDouble -> next
-        }
-      case Part1(p1End, None, next) =>
-        val p1 = fullSrc.slice(start, p1End).formString
-        p1.toDouble -> next
     }
   }
 
@@ -169,7 +84,132 @@ abstract class JsonArrayParse[F[_], Input](
 
   }
 
-  // todo: handle unicode ??? (maybe just dont support it)
+  implicit val ParseApp: Applicative[Parse] = new Applicative[Parse] {
+    override def pure[A](x: A): Parse[A] = { path => src =>
+      ME.pure(x)
+    }
+    override def ap[A, B](ff: Parse[A => B])(fa: Parse[A]): Parse[B] = { path => src =>
+      for {
+        fn <- ff(path)(src): F[A => B]
+        a  <- fa(path)(src): F[A]
+      } yield {
+        fn(a)
+      }
+    }
+  }
+
+  def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
+    (parseObj(discriminatorField, parseString)(path)(src): F[String]).flatMap { key =>
+      oneOf(key) match {
+        case Some(parseFn) => parseFn.value(path)(src)
+        case None =>
+          ME.raiseError[I](ParseFailure(s"Cannot parse object with type=$key"))
+      }
+    }
+  }
+
+  def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
+    (parse(path)(src): F[I])
+      .map[Option[I]] {
+
+        // WARNING: runtime flattening of None
+        // We dont flatten nested Some (eg. Some(Some(x)) => Some(x))
+        // because that would break the type
+        // ie. None <: Option[Option[Option[?]]] is generally true
+        // but Some(x) <: Option[Option[Option[?]]] is not
+        case None => None
+        case i    => Some(i)
+      }
+      .recover {
+        case _ => None
+      }
+  }
+
+  val parsing: ParseOps[Parse, ?] ~> Parse = parsingM
+
+  private def wrap[A](a: => A): F[A] = ME.fromEither {
+    try {
+      Right(a)
+    } catch {
+      case e: ParseFailure => Left(e)
+    }
+  }
+
+  private def unsafeParseString(src: InAndPos[Input])(
+      implicit path: Vector[PPath]): (String, Int) = {
+    val (full, pointer) = src
+    val latestI         = skipWS(full, pointer)
+    val firstC          = getChar(full, latestI)
+
+    firstC match {
+      case '"' => accJsString(full, latestI + 1)
+      case other =>
+        throw ParseFailure(s"""String should starts with ", but found $other""", path)
+    }
+  }
+
+  private def unsafeParseBool(src: InAndPos[Input])(
+      implicit path: Vector[PPath]): (Boolean, Int) = {
+    val (full, ptr)    = src
+    val withoutWS      = skipWS(full, ptr)
+    val (isTrue, next) = full.isFollowedBy(withoutWS)("true")
+
+    if (isTrue) {
+      true -> next
+    } else {
+      val (isFalse, next) = full.isFollowedBy(withoutWS)("false")
+      if (isFalse) {
+        false -> next
+      } else {
+        throw ParseFailure("Expecting either `true` or `false`", path)
+      }
+    }
+  }
+
+  /**
+    * Number is broken down into 3 parts
+    *
+    * 20.6e10
+    *
+    * part 1 - 20 terminated by .
+    * part 2 - 6 terminated by e
+    * part 3 - 10 terminated by terminator
+    *
+    * @param terminator to indicate what character terminates the number
+    * @return
+    */
+  private def unsafeParseNum(terminator: ExpectedTerminator, input: InAndPos[Input])(
+      implicit path: Vector[PPath]): (Double, Int) = {
+    val (fullSrc, i) = input
+    val start        = skipWS(fullSrc, i)
+
+    parseNum1(fullSrc, start)(terminator) match {
+      case Part1(_, Some(sep1), next) =>
+        parseNum2(fullSrc, next, sep1)(terminator) match {
+
+          case Part2(_, Some(_), next) =>
+            parseNum3(fullSrc, next)(terminator) match {
+
+              case Part3(p3, next) =>
+                val full = fullSrc.slice(start, p3).formString
+
+                try {
+                  full.toDouble -> next
+                } catch {
+                  case e: NumberFormatException => throw e
+                }
+
+            }
+          case Part2(p2End, None, next) =>
+            val full = fullSrc.slice(start, p2End).formString
+
+            full.toDouble -> next
+        }
+      case Part1(p1End, None, next) =>
+        val p1 = fullSrc.slice(start, p1End).formString
+        p1.toDouble -> next
+    }
+  }
 
   private def skipStr(src: Input)(implicit path: Vector[PPath]): Pipe = { s =>
     unsafeParseString(src -> s)._2
@@ -252,49 +292,6 @@ abstract class JsonArrayParse[F[_], Input](
     }
   }
 
-  implicit val ParseApp: Applicative[Parse] = new Applicative[Parse] {
-    override def pure[A](x: A): Parse[A] = { path => src =>
-      ME.pure(x)
-    }
-    override def ap[A, B](ff: Parse[A => B])(fa: Parse[A]): Parse[B] = { path => src =>
-      for {
-        fn <- ff(path)(src): F[A => B]
-        a  <- fa(path)(src): F[A]
-      } yield {
-        fn(a)
-      }
-    }
-  }
-
-  def parseOneOf[I](oneOf: NonEmptyMap[String, Lazy[Parse[I]]]): Parse[I] = { path => src =>
-    (parseObj(discriminatorField, parseString)(path)(src): F[String]).flatMap { key =>
-      oneOf(key) match {
-        case Some(parseFn) => parseFn.value(path)(src)
-        case None =>
-          ME.raiseError[I](ParseFailure(s"Cannot parse object with type=$key"))
-      }
-    }
-  }
-
-  def parseOptional[I](parse: Parse[I]): Parse[Option[I]] = { path => src =>
-    (parse(path)(src): F[I])
-      .map[Option[I]] {
-
-        // WARNING: runtime flattening of None
-        // We dont flatten nested Some (eg. Some(Some(x)) => Some(x))
-        // because that would break the type
-        // ie. None <: Option[Option[Option[?]]] is generally true
-        // but Some(x) <: Option[Option[Option[?]]] is not
-        case None => None
-        case i    => Some(i)
-      }
-      .recover {
-        case _ => None
-      }
-  }
-
-  val parsing: ParseOps[Parse, ?] ~> Parse = parsingM
-
   implicit class StringOps(fullSource: Input) {
     def isFollowedBy(i: Int)(str: String): (Boolean, Int) = {
       val slice = fullSource.slice(i, i + str.length)
@@ -352,6 +349,7 @@ abstract class JsonArrayParse[F[_], Input](
     }
   }
 
+  // todo: handle unicode ??? (maybe just dont support it)
   private def accJsString(full: Input, i: Int)(implicit path: Vector[PPath]): (String, Int) = {
 
     // lastCharIsSpecial - we need to know if last

@@ -25,10 +25,9 @@ object Parser {
     HFix.cata[ParseOps, TargetType, parse.Parse](expr, parse.parsing).apply(initPath)(src)
   }
 
-  // this method might be ineffcient, benchmark needed
   def parseString[F[_], I](expr: HFix[ParseOps, I], src: String)(
-      implicit parse: JsonParse[(Array[Char], Int), F]): F[I] = {
-    parseArrayChar(expr, src.toCharArray)
+      implicit parse: JsonParse[(String, Int), F]): F[I] = {
+    parseG(expr, src -> 0)
   }
 
   def parseArrayChar[F[_], I](expr: HFix[ParseOps, I], src: Array[Char])(

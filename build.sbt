@@ -48,7 +48,7 @@ lazy val derive = project
     ) ++ testDeps
   )
 
-val benchmarkV = "0.0.6+9-81e2b71a+20190712-2115-SNAPSHOT"
+val benchmarkV = "0.0.7+1-14ae1f8e+20190713-0759-SNAPSHOT"
 lazy val benchmark = project
   .in(file("benchmark"))
   .settings(commons)

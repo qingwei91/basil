@@ -14,9 +14,8 @@ Json from `Array[Char]` is not supported now because Array cannot form a Monad t
 
 ```scala
 libraryDependencies += Seq(
-    "io.github.qingwei91" %% "basil-core"   % "0.0.3",
-    "io.github.qingwei91" %% "basil-derive" % "0.0.3",
-    "io.github.qingwei91" %% "basil-fs2"    % "0.0.3"
+    "io.github.qingwei91" %% "basil-core"   % "0.0.7",
+    "io.github.qingwei91" %% "basil-derive" % "0.0.7"
 )
 ```
 
@@ -112,7 +111,7 @@ For example, given a json
 
 if we only need the 2nd element, we don't care the type of 3rd element and so on, we don't even have to make sure the json is valid, as long as we can get the 2nd element.
 
-All parsing logic lives in `basil.parser.JsonParse`, I tried to be generic here, so the core logic can work with any input type as long as they can implement the typeclass required
+All parsing logic lives in `basil.parser.JsonArrayParse`, I tried to be generic here, so the core logic can work with any input type as long as they can implement the typeclass required
 
 ### Acknowledgement
 
@@ -134,8 +133,6 @@ sbt sonatypeRelease
 ### Next
 
 * Benchmark
-* Support Option[X]
-* Split fs2 into separate module
 * Better error message
 * Support extract json number into different scala number type (long, float, int, double)
 * Support extract data as Sequence
